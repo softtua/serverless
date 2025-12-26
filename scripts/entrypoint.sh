@@ -11,7 +11,7 @@ if [[ ! -f /opt/comfyui-api-wrapper/proxima ]]; then
     git clone https://github.com/softtua/serverless.git /opt/proxima-serverless && \
     mv /opt/proxima-serverless/comfyui-api-wrapper /opt/comfyui-api-wrapper && \
     cd /opt/comfyui-api-wrapper && \
-    python -m venv .venv
+    uv venv
     . .venv/bin/activate
     uv pip install --no-cache-dir -r requirements.txt
     deactivate
