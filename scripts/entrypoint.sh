@@ -5,6 +5,27 @@ export BACKEND=comfyui-json
 export COMFYUI_API_BASE="http://localhost:18188"
 export MODEL_LOG=/var/log/portal/comfyui.log;
 
+# Configure rclone if not already configured
+RCLONE_CONF="/root/.config/rclone/rclone.conf"
+if [[ ! -f "$RCLONE_CONF" ]]; then
+    echo "Creating rclone configuration..."
+    mkdir -p "$(dirname "$RCLONE_CONF")"
+    cat > "$RCLONE_CONF" << EOF
+[r2]
+type = s3
+provider = Cloudflare
+access_key_id = ${R2_ACCESS_KEY}
+secret_access_key = ${R2_SECRET_KEY}
+endpoint = https://d0f1aac5a9c6090a0b86aa69e60f2968.r2.cloudflarestorage.com
+acl = private
+EOF
+    echo "Rclone configuration created successfully"
+fi
+
+if [[ -n $CF_TOKEN ]]; then
+  cloudflared service install $CF_TOKEN
+fi
+
 if [[ ! -f /opt/comfyui-api-wrapper/proxima ]]; then
     echo "Replacing comfyui-api-wrapper with proxima version"
     rm -rf /opt/comfyui-api-wrapper && \
