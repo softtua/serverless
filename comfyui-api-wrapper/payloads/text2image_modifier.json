@@ -1,0 +1,30 @@
+{
+  "input": {
+    "request_id": "",
+    "modifier": "Text2Image",
+    "modifications": {
+      "prompt": "A beautiful sunset over mountains, photorealistic",
+      "negative_prompt": "blurry, low quality",
+      "ckpt_name": "v1-5-pruned-emaonly-fp16.safetensors",
+      "steps": 20,
+      "cfg_scale": 8.0,
+      "width": 512,
+      "height": 512,
+      "sampler_name": "dpmpp_2m"
+    },
+    "s3": {
+      "access_key_id": "",
+      "secret_access_key": "",
+      "endpoint_url": "",
+      "bucket_name": "",
+      "region": ""
+    },
+    "webhook": {
+      "url": "",
+      "extra_params": {
+        "user_id": "12345",
+        "project_id": "abc-def"
+      }
+    }
+  }
+}
