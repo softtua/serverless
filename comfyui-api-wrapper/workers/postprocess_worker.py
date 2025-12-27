@@ -60,12 +60,12 @@ class PostprocessWorker:
                     logger.debug(f"ComfyUI response structure: {json.dumps(result.comfyui_response, indent=2)[:1000]}")
                     
                     # Move generated assets to organized directory
-                    await self.move_assets(request_id, result)
+                    await self.move_assets(request_id, result, request.input.remove_watermark)
                     
                     # Handle S3 upload - check payload first, then environment variables
                     s3_config = await self.get_s3_config(request.input)
                     if s3_config:
-                        await self.upload_assets(request_id, s3_config, result)
+                        await self.upload_assets(request_id, request.input.user_id, s3_config, result)
                     else:
                         logger.info(f"No S3 configuration found for {request_id}, skipping upload")
                 else:
@@ -119,7 +119,7 @@ class PostprocessWorker:
             
         logger.info(f"PostprocessWorker {self.worker_id} finished")
     
-    async def move_assets(self, request_id: str, result) -> None:
+    async def move_assets(self, request_id: str, result, removeWatermark: bool) -> None:
         """Move generated assets to organized directory structure"""
         try:
             # Create job-specific output directory
@@ -177,6 +177,20 @@ class PostprocessWorker:
                 
                 # Look for different output types (images, gifs, videos, etc.)
                 for output_type, output_list in node_outputs.items():
+                    # Handle text output type (file paths)
+                    if not removeWatermark and output_type == "text" and isinstance(output_list, str) and output_list.startswith("/opt/ComfyUI/output"):
+                        # Process text node output as a file path
+                        processed = await self._process_output_file_from_text_node(
+                            output_list,
+                            job_output_dir,
+                            request_id,
+                            node_id,
+                            output_type
+                        )
+                        if processed:
+                            processed_files.append(processed)
+                        continue
+
                     if not isinstance(output_list, list):
                         logger.debug(f"Skipping non-list output type {output_type} in node {node_id}")
                         continue
@@ -274,6 +288,49 @@ class PostprocessWorker:
             logger.error(f"Error processing output file {item}: {e}", exc_info=True)
             return None
 
+    async def _process_output_file_from_text_node(self, filePath: str, job_output_dir: Path, request_id: str, node_id: str, output_type: str) -> Optional[Dict]:
+        try:
+            original_path = Path(filePath)
+            if not original_path.exists():
+                logger.warning(f"Original file not found: {original_path}")
+                return None
+
+            # Extract filename with extension from full path
+            filename = original_path.name
+
+            # Destination path in job directory
+            dest_path = job_output_dir / filename
+
+            # Get the real path (in case original_path is a symlink from a cached result)
+            real_original_path = original_path.resolve()
+
+            logger.info(f"Copying {real_original_path} to {dest_path}")
+
+            # Copy the file (using real path to handle symlinks)
+            await self._copy_file_async(real_original_path, dest_path)
+
+            # Remove original file/symlink and create new symlink pointing to our copy
+            if original_path.exists() or original_path.is_symlink():
+                await self._remove_file_async(original_path)
+
+            # Create symlink from original location to our copy
+            await self._create_symlink_async(dest_path, original_path)
+
+            logger.debug(f"Created symlink: {original_path} -> {dest_path}")
+
+            # Return file info for result
+            return {
+                "filename": filename,
+                "local_path": str(dest_path),
+                "type": "output",
+                "node_id": node_id,
+                "output_type": output_type
+            }
+
+        except Exception as e:
+            logger.error(f"Error processing output file from text node {filePath}: {e}", exc_info=True)
+            return None
+
     async def _copy_file_async(self, src: Path, dst: Path) -> None:
         """Async file copy"""
         loop = asyncio.get_running_loop()
@@ -292,7 +349,7 @@ class PostprocessWorker:
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, os.symlink, str(target), str(link))
 
-    async def upload_assets(self, request_id: str, s3_config: Dict, result) -> None:
+    async def upload_assets(self, request_id: str, user_id: str, s3_config: Dict, result) -> None:
         """Upload assets to S3 storage"""
         if not hasattr(result, 'output') or not result.output:
             logger.info(f"No assets to upload for {request_id}")
@@ -332,7 +389,7 @@ class PostprocessWorker:
                     if local_path and Path(local_path).exists():
                         task = asyncio.create_task(
                             self.upload_file_and_get_url(
-                                request_id, s3_client, bucket_name, local_path
+                                request_id, user_id, s3_client, bucket_name, local_path
                             )
                         )
                         tasks.append(task)
@@ -362,12 +419,21 @@ class PostprocessWorker:
         """Helper for asyncio.gather with missing files"""
         return None
 
-    async def upload_file_and_get_url(self, request_id: str, s3_client, bucket_name: str, local_path: str) -> Optional[str]:
+    async def upload_file_and_get_url(self, request_id: str, user_id: str, s3_client, bucket_name: str, local_path: str) -> Optional[str]:
         """Upload single file and return presigned URL"""
         try:
             file_path = Path(local_path)
-            s3_key = f"{request_id}/{file_path.name}"
-            
+
+            # Get first 16 chars of request_id as suffix
+            request_suffix = request_id[:16] if request_id and len(request_id) >= 16 else request_id
+
+            # Split filename into name and extension
+            file_stem = file_path.stem  # filename without extension
+            file_suffix = file_path.suffix  # extension with dot (e.g., '.jpg')
+
+            # Construct new filename with request_id suffix
+            s3_key = f"{user_id}/video/{file_stem}_{request_suffix}{file_suffix}"
+
             logger.debug(f"Uploading {s3_key} to bucket {bucket_name}")
 
             # Upload file
@@ -380,14 +446,16 @@ class PostprocessWorker:
                 )
 
             # Generate presigned URL
-            presigned_url = await s3_client.generate_presigned_url(
-                'get_object',
-                Params={'Bucket': bucket_name, 'Key': s3_key},
-                ExpiresIn=604800  # 7 days
-            )
+            #presigned_url = await s3_client.generate_presigned_url(
+            #    'get_object',
+            #    Params={'Bucket': bucket_name, 'Key': s3_key},
+            #    ExpiresIn=604800  # 7 days
+            #)
             
-            logger.debug(f"Generated presigned URL for {s3_key}")
-            return presigned_url
+            #logger.debug(f"Generated presigned URL for {s3_key}")
+            mediaUrl = f"https://media.proxima.art/{s3_key}"
+
+            return mediaUrl
             
         except Exception as e:
             logger.error(f"Error uploading {local_path}: {e}")

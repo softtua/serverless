@@ -14,9 +14,9 @@ if [[ ! -f "$RCLONE_CONF" ]]; then
 [r2]
 type = s3
 provider = Cloudflare
-access_key_id = ${R2_ACCESS_KEY}
-secret_access_key = ${R2_SECRET_KEY}
-endpoint = https://d0f1aac5a9c6090a0b86aa69e60f2968.r2.cloudflarestorage.com
+access_key_id = ${S3_ACCESS_KEY_ID}
+secret_access_key = ${S3_SECRET_ACCESS_KEY}
+endpoint = ${S3_ENDPOINT_URL}
 acl = private
 EOF
     echo "Rclone configuration created successfully"

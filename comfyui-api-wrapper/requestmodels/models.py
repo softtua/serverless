@@ -78,6 +78,8 @@ class WebHook(BaseModel):
 class Input(BaseModel):
     request_id: str = Field(default="")
     modifier: str = Field(default="")
+    remove_watermark: bool = Field(default=False)
+    user_id: str = Field(default="")
     modifications: Dict = Field(default_factory=dict)
     workflow_json: Dict = Field(default_factory=dict)
     s3: Optional[S3Config] = Field(default=None)
