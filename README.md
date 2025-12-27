@@ -22,8 +22,8 @@ The `scripts/` directory contains hook scripts for Vast.ai serverless system:
 
 | Variable | Description | Required | Default |
 |----------|-------------|----------|---------|
-| `R2_ACCESS_KEY` | Cloudflare R2 access key for rclone configuration | No | - |
-| `R2_SECRET_KEY` | Cloudflare R2 secret key for rclone configuration | No | - |
+| `S3_ACCESS_KEY_ID` | Cloudflare R2 access key for rclone configuration | No | - |
+| `S3_SECRET_ACCESS_KEY` | Cloudflare R2 secret key for rclone configuration | No | - |
 | `CF_TOKEN` | Cloudflare tunnel token for cloudflared service | No | - |
 | `COMFYUI_VERSION` | ComfyUI version to checkout (tag or "latest") | No | `latest` |
 | `WORKSPACE` | Workspace directory path | No | `/workspace` |
