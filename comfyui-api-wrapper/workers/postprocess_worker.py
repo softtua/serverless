@@ -177,20 +177,6 @@ class PostprocessWorker:
                 
                 # Look for different output types (images, gifs, videos, etc.)
                 for output_type, output_list in node_outputs.items():
-                    # Handle text output type (file paths)
-                    if not removeWatermark and output_type == "text" and isinstance(output_list, str) and output_list.startswith("/opt/ComfyUI/output"):
-                        # Process text node output as a file path
-                        processed = await self._process_output_file_from_text_node(
-                            output_list,
-                            job_output_dir,
-                            request_id,
-                            node_id,
-                            output_type
-                        )
-                        if processed:
-                            processed_files.append(processed)
-                        continue
-
                     if not isinstance(output_list, list):
                         logger.debug(f"Skipping non-list output type {output_type} in node {node_id}")
                         continue
@@ -207,6 +193,18 @@ class PostprocessWorker:
                             processed = await self._process_output_file(
                                 item, 
                                 job_output_dir, 
+                                request_id,
+                                node_id,
+                                output_type
+                            )
+                            if processed:
+                                processed_files.append(processed)
+                        # Handle text output type (file paths)
+                        if isinstance(item, str) and item.startswith("/workspace/ComfyUI/output"):
+                            # Process string output as a file path
+                            processed = await self._process_output_file_from_text_node(
+                                item,
+                                job_output_dir,
                                 request_id,
                                 node_id,
                                 output_type
@@ -470,6 +468,7 @@ class PostprocessWorker:
             webhook_data = {
                 "id": result.id,
                 "status": result.status,
+                "success": result.status == "completed",
                 "message": result.message,
                 "output": getattr(result, 'output', [])
             }

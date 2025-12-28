@@ -5,6 +5,8 @@ export BACKEND=comfyui-json
 export COMFYUI_API_BASE="http://localhost:18188"
 export MODEL_LOG=/var/log/portal/comfyui.log;
 
+START_SERVER_URL="https://raw.githubusercontent.com/vast-ai/pyworker/main/start_server.sh"
+
 # Configure rclone if not already configured
 RCLONE_CONF="/root/.config/rclone/rclone.conf"
 if [[ ! -f "$RCLONE_CONF" ]]; then
@@ -42,7 +44,11 @@ fi
 # We operating only on the ComfyUI provided by the image.
 # Volume stored installs are to be managed by the user
 
-[[ -d "${WORKSPACE}/ComfyUI" ]] && exec /opt/instance-tools/bin/entrypoint_base.sh "$@"
+if [[ -d "${WORKSPACE}/ComfyUI" ]]; then
+    /opt/instance-tools/bin/entrypoint_base.sh "$@"
+    wget -O - "$START_SERVER_URL" | bash
+    exit 0
+fi
 
 # Update ComfyUI
 COMFYUI_DIR="/opt/workspace-internal/ComfyUI"
@@ -65,4 +71,8 @@ git checkout "$version" && \
 # Do NOT upgrade existing packages because we will probably break something
 uv pip install --python /venv/main/bin/python --no-cache-dir -r requirements.txt
 
-exec /opt/instance-tools/bin/entrypoint_base.sh "$@"
+# Run entrypoint_base.sh
+/opt/instance-tools/bin/entrypoint_base.sh "$@"
+
+# Execute start_server.sh from remote repository
+wget -O - "$START_SERVER_URL" | bash

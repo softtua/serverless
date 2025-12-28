@@ -23,11 +23,7 @@ NODES=(
     "https://github.com/kijai/ComfyUI-MMAudio"
     "https://github.com/MoonHugo/ComfyUI-FFmpeg"
     "https://github.com/kijai/ComfyUI-WanVideoWrapper"
-    "https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler"
-    "https://github.com/1038lab/ComfyUI-SparkTTS"
-    "https://github.com/filliptm/ComfyUI_Fill-ChatterBox"
     "https://github.com/christian-byrne/audio-separation-nodes-comfyui"
-    "https://github.com/Lightricks/ComfyUI-LTXVideo"
     "https://github.com/Jonseed/ComfyUI-Detail-Daemon"
     "https://github.com/vrgamegirl19/comfyui-vrgamedevgirl"
     "https://github.com/WASasquatch/was-node-suite-comfyui"
@@ -86,6 +82,9 @@ install_custom_nodes() {
             fi
         fi
     done
+
+    # Remove ComfyUI-Manager
+    rm -rf "${WORKSPACE_DIR}/ComfyUI/custom_nodes/ComfyUI-Manager"
 }
 
 install_sageattention() {
