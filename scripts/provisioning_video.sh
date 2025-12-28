@@ -93,14 +93,14 @@ install_sageattention() {
     git clone https://github.com/thu-ml/SageAttention.git "${WORKSPACE_DIR}/sageattention"
     cd "${WORKSPACE_DIR}/sageattention"
     export EXT_PARALLEL=4 NVCC_APPEND_FLAGS="--threads 8" MAX_JOBS=32
-    /venv/main/bin/python python setup.py install
+    /venv/main/bin/python setup.py install
 }
 
 main() {
     . /venv/main/bin/activate
     set_cleanup_job
     mkdir -p "$HF_SEMAPHORE_DIR"
-    write_workflow
+    #write_workflow
     pids=()
 
     install_custom_nodes
