@@ -95,6 +95,9 @@ install_sageattention() {
 }
 
 main() {
+    if [[ ! -d "${WORKSPACE_DIR}/vast-pyworker" ]]; then
+        cp -r /opt/proxima-serverless/pyworker "${WORKSPACE_DIR}/vast-pyworker"
+    fi
     . /venv/main/bin/activate
     set_cleanup_job
     mkdir -p "$HF_SEMAPHORE_DIR"

@@ -35,7 +35,7 @@ if [[ ! -f /opt/comfyui-api-wrapper/proxima ]]; then
     echo "WORKSPACE is: ${WORKSPACE}" && \
     rm -rf /opt/comfyui-api-wrapper && \
     git clone https://github.com/softtua/serverless.git /opt/proxima-serverless && \
-    cp -r /opt/proxima-serverless/pyworker /workspace/vast-pyworker && \
+    cp -r /opt/proxima-serverless/comfyui-api-wrapper /opt/comfyui-api-wrapper && \
     cd /opt/comfyui-api-wrapper && \
     uv venv
     . .venv/bin/activate
