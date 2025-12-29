@@ -32,7 +32,6 @@ fi
 
 if [[ ! -f /opt/comfyui-api-wrapper/proxima ]]; then
     echo "Replacing comfyui-api-wrapper with proxima version"
-    echo "WORKSPACE is: ${WORKSPACE}" && \
     rm -rf /opt/comfyui-api-wrapper && \
     git clone https://github.com/softtua/serverless.git /opt/proxima-serverless && \
     cp -r /opt/proxima-serverless/comfyui-api-wrapper /opt/comfyui-api-wrapper && \
