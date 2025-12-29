@@ -34,8 +34,8 @@ if [[ ! -f /opt/comfyui-api-wrapper/proxima ]]; then
     echo "Replacing comfyui-api-wrapper with proxima version"
     rm -rf /opt/comfyui-api-wrapper && \
     git clone https://github.com/softtua/serverless.git /opt/proxima-serverless && \
-    mv /opt/proxima-serverless/comfyui-api-wrapper /opt/comfyui-api-wrapper && \
-    mv /opt/proxima-serverless/pyworker "${WORKSPACE}/vast-pyworker" && \
+    cp -r /opt/proxima-serverless/comfyui-api-wrapper /opt/comfyui-api-wrapper && \
+    cp -r /opt/proxima-serverless/pyworker "${WORKSPACE}/vast-pyworker" && \
     cd /opt/comfyui-api-wrapper && \
     uv venv
     . .venv/bin/activate
