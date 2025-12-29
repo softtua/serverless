@@ -5,7 +5,7 @@ export BACKEND=comfyui-json
 export COMFYUI_API_BASE="http://localhost:18188"
 export MODEL_LOG=/var/log/portal/comfyui.log;
 
-START_SERVER_URL="https://raw.githubusercontent.com/vast-ai/pyworker/main/start_server.sh"
+# START_SERVER_URL="https://raw.githubusercontent.com/vast-ai/pyworker/main/start_server.sh"
 
 # Configure rclone if not already configured
 RCLONE_CONF="/root/.config/rclone/rclone.conf"
@@ -45,8 +45,12 @@ fi
 # Volume stored installs are to be managed by the user
 
 if [[ -d "${WORKSPACE}/ComfyUI" ]]; then
+    if [[ ! -d "/opt/proxima-serverless/pyworker" ]]; then
+      cd "/opt/proxima-serverless" || exit 1
+      git pull
+    fi
     /opt/instance-tools/bin/entrypoint_base.sh "$@"
-    wget -O - "$START_SERVER_URL" | bash
+    bash "/opt/proxima-serverless/pyworker/start_server.sh"
     exit 0
 fi
 
@@ -74,5 +78,5 @@ uv pip install --python /venv/main/bin/python --no-cache-dir -r requirements.txt
 # Run entrypoint_base.sh
 /opt/instance-tools/bin/entrypoint_base.sh "$@"
 
-# Execute start_server.sh from remote repository
-wget -O - "$START_SERVER_URL" | bash
+# Execute start_server.sh from serverless repository
+bash "/opt/proxima-serverless/pyworker/start_server.sh"
