@@ -98,7 +98,7 @@ main() {
     . /venv/main/bin/activate
     set_cleanup_job
     mkdir -p "$HF_SEMAPHORE_DIR"
-    #write_workflow
+    write_workflow
     pids=()
 
     install_custom_nodes

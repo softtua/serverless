@@ -33,6 +33,7 @@ if [[ ! -f /opt/comfyui-api-wrapper/proxima ]]; then
     rm -rf /opt/comfyui-api-wrapper && \
     git clone https://github.com/softtua/serverless.git /opt/proxima-serverless && \
     mv /opt/proxima-serverless/comfyui-api-wrapper /opt/comfyui-api-wrapper && \
+    mv /opt/proxima-serverless/pyworker "${WORKSPACE}/vast-pyworker" && \
     cd /opt/comfyui-api-wrapper && \
     uv venv
     . .venv/bin/activate
@@ -45,12 +46,8 @@ fi
 # Volume stored installs are to be managed by the user
 
 if [[ -d "${WORKSPACE}/ComfyUI" ]]; then
-    if [[ ! -d "/opt/proxima-serverless/pyworker" ]]; then
-      cd "/opt/proxima-serverless" || exit 1
-      git pull
-    fi
     /opt/instance-tools/bin/entrypoint_base.sh "$@"
-    bash "/opt/proxima-serverless/pyworker/start_server.sh"
+    bash "${WORKSPACE}/vast-pyworker/start_server.sh"
     exit 0
 fi
 
@@ -79,4 +76,4 @@ uv pip install --python /venv/main/bin/python --no-cache-dir -r requirements.txt
 /opt/instance-tools/bin/entrypoint_base.sh "$@"
 
 # Execute start_server.sh from serverless repository
-bash "/opt/proxima-serverless/pyworker/start_server.sh"
+bash "${WORKSPACE}/vast-pyworker/start_server.sh"
