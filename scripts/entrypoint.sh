@@ -32,16 +32,20 @@ fi
 
 if [[ ! -f /opt/comfyui-api-wrapper/proxima ]]; then
     echo "Replacing comfyui-api-wrapper with proxima version"
+    echo "WORKSPACE is: ${WORKSPACE}" && \
     rm -rf /opt/comfyui-api-wrapper && \
     git clone https://github.com/softtua/serverless.git /opt/proxima-serverless && \
-    cp -r /opt/proxima-serverless/comfyui-api-wrapper /opt/comfyui-api-wrapper && \
-    cp -r /opt/proxima-serverless/pyworker "${WORKSPACE}/vast-pyworker" && \
+    cp -r /opt/proxima-serverless/pyworker /workspace/vast-pyworker && \
     cd /opt/comfyui-api-wrapper && \
     uv venv
     . .venv/bin/activate
     uv pip install --no-cache-dir -r requirements.txt
     deactivate
     touch /opt/comfyui-api-wrapper/proxima
+fi
+
+if [[ ! -d "${WORKSPACE}/vast-pyworker" ]]; then
+    cp -r /opt/proxima-serverless/pyworker "${WORKSPACE}/vast-pyworker"
 fi
 
 # We operating only on the ComfyUI provided by the image.
