@@ -4,7 +4,7 @@ set -e -o pipefail
 
 WORKSPACE_DIR="${WORKSPACE_DIR:-/workspace}"
 
-SERVER_DIR="$WORKSPACE_DIR/vast-pyworker"
+SERVER_DIR="/opt/proxima-serverless/pyworker"
 ENV_PATH="$WORKSPACE_DIR/worker-env"
 DEBUG_LOG="$WORKSPACE_DIR/debug.log"
 PYWORKER_LOG="$WORKSPACE_DIR/pyworker.log"

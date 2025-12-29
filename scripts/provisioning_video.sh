@@ -30,7 +30,6 @@ NODES=(
     "https://github.com/Suzie1/ComfyUI_Comfyroll_CustomNodes"
     "https://github.com/yolain/ComfyUI-Easy-Use"
     "https://github.com/kijai/ComfyUI-segment-anything-2"
-    "https://github.com/diodiogod/ComfyUI_ChatterBox_SRT_Voice"
     "https://github.com/rgthree/rgthree-comfy"
     "https://github.com/Fannovel16/comfyui_controlnet_aux"
     "https://github.com/melMass/comfy_mtb"
