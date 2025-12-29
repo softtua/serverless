@@ -5,6 +5,8 @@ export BACKEND=comfyui-json
 export COMFYUI_API_BASE="http://localhost:18188"
 export MODEL_LOG=/var/log/portal/comfyui.log;
 
+WORKSPACE="${WORKSPACE:-/workspace}"
+
 # START_SERVER_URL="https://raw.githubusercontent.com/vast-ai/pyworker/main/start_server.sh"
 
 # Configure rclone if not already configured
