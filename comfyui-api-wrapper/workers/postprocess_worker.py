@@ -28,7 +28,8 @@ class PostprocessWorker:
         self.postprocess_queue = kwargs["postprocess_queue"]
         self.request_store = kwargs["request_store"]
         self.response_store = kwargs["response_store"]
-        
+        self.generation_lock = kwargs["generation_lock"]
+
         # Configuration
         self.output_dir = Path(OUTPUT_DIR)
 
@@ -98,6 +99,17 @@ class PostprocessWorker:
                     logger.error(f"Failed to update result store for {request_id}: {store_error}")
             
             finally:
+                # Release generation lock if this request held it
+                try:
+                    result = await self.response_store.get(request_id)
+                    if result and getattr(result, '_holds_generation_lock', False):
+                        self.generation_lock.release()
+                        logger.info(f"PostprocessWorker {self.worker_id} released generation lock for job: {request_id}")
+                        result._holds_generation_lock = False
+                        await self.response_store.set(request_id, result)
+                except Exception as lock_error:
+                    logger.error(f"Failed to release generation lock for {request_id}: {lock_error}")
+
                 # Handle webhook - check payload first, then environment variables
                 webhook_config = await self.get_webhook_config(request.input)
                 if webhook_config:

@@ -22,7 +22,8 @@ class GenerationWorker:
         self.postprocess_queue = kwargs["postprocess_queue"]
         self.request_store = kwargs["request_store"]
         self.response_store = kwargs["response_store"]
-        
+        self.generation_lock = kwargs.get("generation_lock")  # Optional, for future use
+
         # Configuration
         self.max_wait_time = 3600  # 1 hour maximum wait
         self.ws_url = COMFYUI_API_WEBSOCKET

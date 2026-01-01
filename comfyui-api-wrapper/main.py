@@ -69,6 +69,9 @@ preprocess_queue = asyncio.Queue()
 generation_queue = asyncio.Queue()
 postprocess_queue = asyncio.Queue()
 
+# Semaphore to ensure only one request is in generation at a time
+generation_lock = asyncio.Semaphore(1)
+
 
 @app.on_event("startup")
 async def startup_event():
@@ -89,6 +92,7 @@ async def main():
         "postprocess_queue": postprocess_queue,
         "request_store": request_store,
         "response_store": response_store,
+        "generation_lock": generation_lock,
     }
 
     # Create workers using configuration

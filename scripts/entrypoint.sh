@@ -30,6 +30,16 @@ if [[ -n $CF_TOKEN ]]; then
   cloudflared service install $CF_TOKEN
 fi
 
+activate_tunnel() {
+  # Wait for ComfyUI to start up
+  sleep 30
+
+  if [[ -n "${LABS_WORKER:-}" ]]; then
+      echo "Activating tunnel for worker: $LABS_WORKER"
+      curl -X GET "https://proxima.art/api/tunnel/${LABS_WORKER}/activate" || echo "Warning: Failed to activate tunnel"
+  fi
+}
+
 if [[ ! -f /opt/comfyui-api-wrapper/proxima ]]; then
     echo "Replacing comfyui-api-wrapper with proxima version"
     rm -rf /opt/comfyui-api-wrapper && \
@@ -52,7 +62,7 @@ fi
 
 if [[ -d "${WORKSPACE}/ComfyUI" ]]; then
     /opt/instance-tools/bin/entrypoint_base.sh "$@"
-    bash "${WORKSPACE}/vast-pyworker/start_server.sh"
+    activate_tunnel
     exit 0
 fi
 
@@ -79,6 +89,4 @@ uv pip install --python /venv/main/bin/python --no-cache-dir -r requirements.txt
 
 # Run entrypoint_base.sh
 /opt/instance-tools/bin/entrypoint_base.sh "$@"
-
-# Execute start_server.sh from serverless repository
-bash "${WORKSPACE}/vast-pyworker/start_server.sh"
+activate_tunnel

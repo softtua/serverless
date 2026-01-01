@@ -126,6 +126,16 @@ main() {
     done
 
     supervisorctl restart comfyui
+
+    # Wait for ComfyUI to start up
+    sleep 30
+
+    # Activate tunnel if LABS_WORKER is set
+    if [[ -n "${LABS_WORKER:-}" ]]; then
+        echo "Activating tunnel for worker: $LABS_WORKER"
+        curl -X GET "https://proxima.art/api/tunnel/${LABS_WORKER}/activate" || echo "Warning: Failed to activate tunnel"
+    fi
+
 }
 
 # HuggingFace download helper

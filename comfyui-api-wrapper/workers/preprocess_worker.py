@@ -1,4 +1,5 @@
 # preprocess_worker
+import asyncio
 import importlib
 import logging
 from modifiers.basemodifier import BaseModifier
@@ -10,6 +11,7 @@ class PreprocessWorker:
     """
     Check for URL's in the payload and download the assets as required
     """
+
     def __init__(self, worker_id, kwargs):
         self.worker_id = worker_id
         self.preprocess_queue = kwargs["preprocess_queue"]
@@ -17,6 +19,7 @@ class PreprocessWorker:
         self.postprocess_queue = kwargs["postprocess_queue"]
         self.request_store = kwargs["request_store"]
         self.response_store = kwargs["response_store"]
+        self.generation_lock = kwargs["generation_lock"]
 
     async def work(self):
         logger.info(f"PreprocessWorker {self.worker_id}: waiting for jobs")
@@ -43,6 +46,7 @@ class PreprocessWorker:
                 # Check for cancellation
                 if result and getattr(result, 'status', '') == 'cancelled':
                     logger.info(f"PreprocessWorker {self.worker_id} skipping cancelled job: {request_id} - jumping to postprocess")
+                    # Don't acquire lock for cancelled jobs
                     await self.postprocess_queue.put(request_id)
                     self.preprocess_queue.task_done()
                     continue
@@ -62,6 +66,17 @@ class PreprocessWorker:
                 
                 # Update result status to show preprocessing is complete
                 result.status = "processing"
+                result.message = "Preprocessing complete. Waiting for generation slot..."
+                await self.response_store.set(request_id, result)
+
+                # Acquire generation lock to ensure only one request is processed by ComfyUI at a time
+                logger.info(f"PreprocessWorker {self.worker_id} waiting for generation lock for job: {request_id}")
+                await self.generation_lock.acquire()
+                logger.info(f"PreprocessWorker {self.worker_id} acquired generation lock for job: {request_id}")
+
+                # Mark that this request holds the generation lock
+                result._holds_generation_lock = True
+                result.status = "processing"
                 result.message = "Preprocessing complete. Queued for generation."
                 await self.response_store.set(request_id, result)
                 
@@ -76,6 +91,12 @@ class PreprocessWorker:
                     # Update result to show failure
                     result = await self.response_store.get(request_id)
                     if result:
+                        # Release lock if we acquired it before the failure
+                        if getattr(result, '_holds_generation_lock', False):
+                            self.generation_lock.release()
+                            logger.info(f"PreprocessWorker {self.worker_id} released generation lock after failure for job: {request_id}")
+                            result._holds_generation_lock = False
+
                         result.status = "failed"
                         result.message = f"Preprocessing failed: {str(e)}"
                         await self.response_store.set(request_id, result)
