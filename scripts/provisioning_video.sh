@@ -71,7 +71,7 @@ install_custom_nodes() {
             printf "Downloading node: %s...\n" "${repo}"
             git clone "${repo}" "${path}" --recursive
             if [[ -e $requirements ]]; then
-                uv pip install --python /venv/main/bin/python --no-cache-dir -r "${requirements}"
+                pip install --no-cache-dir -r "${requirements}"
             fi
         fi
     done
@@ -81,17 +81,16 @@ install_custom_nodes() {
 }
 
 install_sageattention() {
-    uv pip install --python /venv/main/bin/python --no-cache-dir packaging
+    pip install --no-cache-dir packaging
     git clone https://github.com/thu-ml/SageAttention.git "${WORKSPACE_DIR}/sageattention"
     cd "${WORKSPACE_DIR}/sageattention"
     export EXT_PARALLEL=4 NVCC_APPEND_FLAGS="--threads 8" MAX_JOBS=32
-    /venv/main/bin/python setup.py install
+    python setup.py install
 }
 
 main() {
     set_cleanup_job
     mkdir -p "$HF_SEMAPHORE_DIR"
-    write_workflow
     pids=()
 
     install_custom_nodes
