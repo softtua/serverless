@@ -11,7 +11,7 @@ except ImportError:
     pass
 
 # Base API configuration
-COMFYUI_API_BASE = os.getenv('COMFYUI_API_BASE', 'http://127.0.0.1:8188')
+COMFYUI_API_BASE = os.getenv('COMFYUI_API_BASE', 'http://127.0.0.1:8189')
 
 # API endpoints
 COMFYUI_API_PROMPT = urljoin(COMFYUI_API_BASE, '/prompt')
@@ -28,7 +28,7 @@ CACHE_TYPE = "redis" if os.getenv("API_CACHE", "").lower() == "redis" else "memo
 CACHE_TTL = int(os.getenv("API_CACHE_TTL", 21600))  # 6 hours as default
 
 # Directory configuration using pathlib
-COMFYUI_INSTALL_DIR = Path(os.getenv('COMFYUI_INSTALL_PATH', '/workspace/ComfyUI'))
+COMFYUI_INSTALL_DIR = Path(os.getenv('COMFYUI_INSTALL_PATH', '/opt/ComfyUI'))
 INPUT_DIR = COMFYUI_INSTALL_DIR / 'input'
 OUTPUT_DIR = COMFYUI_INSTALL_DIR / 'output'
 

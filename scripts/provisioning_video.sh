@@ -5,7 +5,7 @@ set -euo pipefail
 ### Configuration ###
 WORKSPACE_DIR="/opt"
 MODELS_DIR="${WORKSPACE_DIR}/ComfyUI/models"
-HF_SEMAPHORE_DIR="/workspace//hf_download_sem_$$"
+HF_SEMAPHORE_DIR="/workspace/hf_download_sem_$$"
 HF_MAX_PARALLEL=3
 MODEL_LOG=${MODEL_LOG:-/var/log/provisioning.log}
 
@@ -16,7 +16,6 @@ NODES=(
     "https://github.com/kijai/ComfyUI-KJNodes"
     "https://github.com/ssitu/ComfyUI_UltimateSDUpscale"
     "https://github.com/cubiq/ComfyUI_essentials"
-    "https://github.com/sipherxyz/comfyui-art-venture"
     "https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite"
     "https://github.com/Fannovel16/ComfyUI-Frame-Interpolation"
     "https://github.com/chflame163/ComfyUI_LayerStyle"
@@ -45,6 +44,8 @@ HF_MODELS=(
   |$MODELS_DIR/diffusion_models/wan2.2_i2v_low_noise_14B_fp16.safetensors"
   "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/diffusion_models/wan2.2_i2v_high_noise_14B_fp16.safetensors
   |$MODELS_DIR/diffusion_models/wan2.2_i2v_high_noise_14B_fp16.safetensors"
+  "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/diffusion_models/wan2.2_animate_14B_bf16.safetensors
+  |$MODELS_DIR/diffusion_models/wan2.2_animate_14B_bf16.safetensors"
 )
 ### End Configuration ###
 

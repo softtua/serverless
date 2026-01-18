@@ -80,22 +80,23 @@ class BaseModifier:
                 logger.info(f"Replaced {self.RANDOM_INT_PLACEHOLDER} in string with {random_int}")
         return data
 
-    async def replace_workflow_urls(self, data):
+    async def replace_workflow_urls(self, data, key=None):
         """
         Find all URL strings in the prompt and replace the URL string with a filepath
         """
         if isinstance(data, dict):
-            for key, value in data.items():
-                data[key] = await self.replace_workflow_urls(value)
-        elif isinstance(data, list):
-            for i, item in enumerate(data):
-                data[i] = await self.replace_workflow_urls(item)
+            for dict_key, value in data.items():
+                data[dict_key] = await self.replace_workflow_urls(value, key=dict_key)
+        #elif isinstance(data, list):
+        #    for i, item in enumerate(data):
+        #        data[i] = await self.replace_workflow_urls(item)
         elif isinstance(data, str) and self.is_url(data):
-            try:
-                data = await self.get_url_content(data)
-            except Exception as e:
-                logger.error(f"Failed to download URL {data}: {e}")
-                raise
+            if key == "image" or key == "video":
+                try:
+                    data = await self.get_url_content(data)
+                except Exception as e:
+                    logger.error(f"Failed to download URL {data}: {e}")
+                    raise
         return data
             
     async def get_url_content(self, url):
@@ -219,6 +220,15 @@ class BaseModifier:
                         extension = '.webp'
                     else:
                         extension = '.jpg'  # Default for images
+                elif 'video' in mime_str:
+                    if 'mp4' in mime_str:
+                        extension = '.mp4'
+                    elif 'webm' in mime_str:
+                        extension = '.webm'
+                    elif 'avi' in mime_str:
+                        extension = '.avi'
+                    else:
+                        extension = '.mp4'  # Default for videos
                 else:
                     extension = '.bin'  # Generic binary
             return extension

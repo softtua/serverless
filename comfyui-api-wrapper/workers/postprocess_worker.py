@@ -212,7 +212,7 @@ class PostprocessWorker:
                             if processed:
                                 processed_files.append(processed)
                         # Handle text output type (file paths)
-                        if isinstance(item, str) and item.startswith("/workspace/ComfyUI/output"):
+                        if isinstance(item, str) and item.startswith("/opt/ComfyUI/output"):
                             # Process string output as a file path
                             processed = await self._process_output_file_from_text_node(
                                 item,
