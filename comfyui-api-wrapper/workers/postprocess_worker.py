@@ -180,6 +180,8 @@ class PostprocessWorker:
             
             # Process each node's outputs
             processed_files = []
+            # Temporary storage for metadata that might come before the video
+            pending_metadata = {}
             for node_id, node_outputs in outputs.items():
                 if not isinstance(node_outputs, dict):
                     logger.debug(f"Skipping non-dict node output: {node_id}")
@@ -187,12 +189,12 @@ class PostprocessWorker:
                 
                 logger.debug(f"Processing node {node_id} outputs: {list(node_outputs.keys())}")
                 
-                # Look for different output types (images, gifs, videos, etc.)
+                # Look for different output types (images, gifs, videos, text etc.)
                 for output_type, output_list in node_outputs.items():
                     if not isinstance(output_list, list):
                         logger.debug(f"Skipping non-list output type {output_type} in node {node_id}")
                         continue
-                    
+                    # item inside the lisst, e.g. images: [item, item, ...], gifs: [item, item, ...], text: [item]
                     for item in output_list:
                         if isinstance(item, dict) and 'filename' in item:
                             # Skip preview/temp files
@@ -210,9 +212,13 @@ class PostprocessWorker:
                                 output_type
                             )
                             if processed:
+                                # If this is a video output and we have pending metadata, add it
+                                processed_type = processed.get("type")
+                                if processed_type and processed_type == "video" and pending_metadata:
+                                    processed.update(pending_metadata)
                                 processed_files.append(processed)
                         # Handle text output type (file paths)
-                        if isinstance(item, str) and item.startswith("/opt/ComfyUI/output"):
+                        if isinstance(item, str) and item.startswith("/opt/ComfyUI/output") and not node_id.startswith("output:"):
                             # Process string output as a file path
                             processed = await self._process_output_file_from_text_node(
                                 item,
@@ -222,7 +228,28 @@ class PostprocessWorker:
                                 output_type
                             )
                             if processed:
+                                # If this is a video output and we have pending metadata, add it
+                                processed_type = processed.get("type")
+                                if processed_type and processed_type == "video" and pending_metadata:
+                                    processed.update(pending_metadata)
                                 processed_files.append(processed)
+                        if node_id in ["output:frames", "output:pose_frames"] and output_type == "text" and isinstance(item, str):
+                            if len(item) > 0:
+                                # Extract the metadata key name after "output:"
+                                metadata_key = node_id.split(":", 1)[1]
+
+                                # Check if we already have a video with type="video" - if so, apply metadata to the last one
+                                video_found = False
+                                for video in reversed(processed_files):
+                                    if video.get("type") == "video":
+                                        video[metadata_key] = item
+                                        video_found = True
+                                        break
+
+                                # If no video found yet, store for later
+                                if not video_found:
+                                    pending_metadata[metadata_key] = item
+
             
             # Add all processed files to the result
             result.output = processed_files
@@ -283,7 +310,10 @@ class PostprocessWorker:
             await self._create_symlink_async(dest_path, original_path)
             
             logger.debug(f"Created symlink: {original_path} -> {dest_path}")
-            
+
+            if node_id.startswith("output:"):
+                file_type = key.split(":", 1)[1]  # Get everything after the first ":"
+
             # Return file info for result
             return {
                 "filename": filename,
@@ -328,11 +358,15 @@ class PostprocessWorker:
 
             logger.debug(f"Created symlink: {original_path} -> {dest_path}")
 
+            file_type = "output"
+            if node_id.startswith("output:"):
+                file_type = key.split(":", 1)[1]  # Get everything after the first ":"
+
             # Return file info for result
             return {
                 "filename": filename,
                 "local_path": str(dest_path),
-                "type": "output",
+                "type": file_type,
                 "node_id": node_id,
                 "output_type": output_type
             }
@@ -396,10 +430,11 @@ class PostprocessWorker:
                 tasks = []
                 for obj in result.output:
                     local_path = obj.get("local_path")
+                    media_type = obj.get("type", "output")
                     if local_path and Path(local_path).exists():
                         task = asyncio.create_task(
                             self.upload_file_and_get_url(
-                                request_id, user_id, s3_client, bucket_name, local_path
+                                request_id, user_id, s3_client, bucket_name, local_path, media_type
                             )
                         )
                         tasks.append(task)
@@ -429,7 +464,7 @@ class PostprocessWorker:
         """Helper for asyncio.gather with missing files"""
         return None
 
-    async def upload_file_and_get_url(self, request_id: str, user_id: str, s3_client, bucket_name: str, local_path: str) -> Optional[str]:
+    async def upload_file_and_get_url(self, request_id: str, user_id: str, s3_client, bucket_name: str, local_path: str, media_type: str) -> Optional[str]:
         """Upload single file and return presigned URL"""
         try:
             file_path = Path(local_path)
@@ -441,8 +476,11 @@ class PostprocessWorker:
             file_stem = file_path.stem  # filename without extension
             file_suffix = file_path.suffix  # extension with dot (e.g., '.jpg')
 
+            # Determine folder based on media_type
+            folder = "video" if media_type == "output" else media_type
+
             # Construct new filename with request_id suffix
-            s3_key = f"{user_id}/video/{file_stem}_{request_suffix}{file_suffix}"
+            s3_key = f"{user_id}/{folder}/{file_stem}_{request_suffix}{file_suffix}"
 
             logger.debug(f"Uploading {s3_key} to bucket {bucket_name}")
 
