@@ -300,19 +300,20 @@ class PostprocessWorker:
             logger.info(f"Copying {real_original_path} to {dest_path}")
             
             # Copy the file (using real path to handle symlinks)
-            await self._copy_file_async(real_original_path, dest_path)
-            
-            # Remove original file/symlink and create new symlink pointing to our copy
-            if original_path.exists() or original_path.is_symlink():
-                await self._remove_file_async(original_path)
-            
-            # Create symlink from original location to our copy
-            await self._create_symlink_async(dest_path, original_path)
-            
-            logger.debug(f"Created symlink: {original_path} -> {dest_path}")
+            if real_original_path != dest_path:
+                await self._copy_file_async(real_original_path, dest_path)
+
+                # Remove original file/symlink and create new symlink pointing to our copy
+                if original_path.exists() or original_path.is_symlink():
+                    await self._remove_file_async(original_path)
+
+                # Create symlink from original location to our copy
+                await self._create_symlink_async(dest_path, original_path)
+
+                logger.debug(f"Created symlink: {original_path} -> {dest_path}")
 
             if node_id.startswith("output:"):
-                file_type = key.split(":", 1)[1]  # Get everything after the first ":"
+                file_type = node_id.split(":", 1)[1]  # Get everything after the first ":"
 
             # Return file info for result
             return {
@@ -346,21 +347,22 @@ class PostprocessWorker:
 
             logger.info(f"Copying {real_original_path} to {dest_path}")
 
-            # Copy the file (using real path to handle symlinks)
-            await self._copy_file_async(real_original_path, dest_path)
+            if real_original_path != dest_path:
+                # Copy the file (using real path to handle symlinks)
+                await self._copy_file_async(real_original_path, dest_path)
 
-            # Remove original file/symlink and create new symlink pointing to our copy
-            if original_path.exists() or original_path.is_symlink():
-                await self._remove_file_async(original_path)
+                # Remove original file/symlink and create new symlink pointing to our copy
+                if original_path.exists() or original_path.is_symlink():
+                    await self._remove_file_async(original_path)
 
-            # Create symlink from original location to our copy
-            await self._create_symlink_async(dest_path, original_path)
+                # Create symlink from original location to our copy
+                await self._create_symlink_async(dest_path, original_path)
 
-            logger.debug(f"Created symlink: {original_path} -> {dest_path}")
+                logger.debug(f"Created symlink: {original_path} -> {dest_path}")
 
             file_type = "output"
             if node_id.startswith("output:"):
-                file_type = key.split(":", 1)[1]  # Get everything after the first ":"
+                file_type = node_id.split(":", 1)[1]  # Get everything after the first ":"
 
             # Return file info for result
             return {

@@ -33,7 +33,6 @@ NODES=(
     "https://github.com/Fannovel16/comfyui_controlnet_aux"
     "https://github.com/melMass/comfy_mtb"
     "https://github.com/kijai/ComfyUI-WanAnimatePreprocess.git"
-    "https://github.com/gokayfem/ComfyUI-fal-API.git"
 )
 
 # Model declarations: "URL|OUTPUT_PATH"
@@ -125,6 +124,11 @@ main() {
     for pid in "${pids[@]}"; do
         wait "$pid" || exit 1
     done
+
+    # For CUDA 13 support
+    pip uninstall onnxruntime-gpu -y
+    pip install coloredlogs flatbuffers numpy packaging protobuf sympy
+    pip install --pre --index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/ort-cuda-13-nightly/pypi/simple/ onnxruntime-gpu
 
     #supervisorctl restart comfyui
     # Wait for ComfyUI to start up
