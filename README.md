@@ -1,20 +1,20 @@
-# ComfyUI API Wrapper for Vast.ai Serverless
+# ComfyUI API Wrapper for AWS SageMaker
 
-Custom implementation of ComfyUI API wrapper with serverless support for Vast.ai cloud infrastructure.
+Custom implementation of ComfyUI API wrapper with serverless support for AWS SageMaker inference.
 
 ## Overview
 
 This project provides:
 - **ComfyUI API Wrapper**: FastAPI-based wrapper for ComfyUI with queue management and S3 storage support
-- **Serverless Scripts**: Automated provisioning and entrypoint scripts for Vast.ai serverless containers
-- **Video Generation Support**: Pre-configured workflows for video generation with Wan 2.2 models
+- **Serverless Scripts**: Automated provisioning and entrypoint scripts for AWS SageMaker inference endpoints
+- **Face2Photo Workflow**: Pre-configured workflow for face-to-photo generation using Qwen-Image-Edit models
 
 ## Scripts Directory
 
-The `scripts/` directory contains hook scripts for Vast.ai serverless system:
+The `scripts/` directory contains hook scripts for AWS SageMaker deployment:
 
-- **`entrypoint.sh`**: Container startup script that configures rclone, cloudflared tunnel, and initializes the ComfyUI environment
-- **`provisioning_video.sh`**: Provisions video generation models, custom nodes, and required dependencies
+- **`entrypoint.sh`**: Container startup script that configures S3 access and initializes the ComfyUI environment
+- **`provisioning_face2photo.sh`**: Provisions face-to-photo generation models (Qwen-Image-Edit), custom nodes, and required dependencies
 
 ## Environment Variables
 
@@ -22,9 +22,8 @@ The `scripts/` directory contains hook scripts for Vast.ai serverless system:
 
 | Variable | Description | Required | Default |
 |----------|-------------|----------|---------|
-| `S3_ACCESS_KEY_ID` | Cloudflare R2 access key for rclone configuration | No | - |
-| `S3_SECRET_ACCESS_KEY` | Cloudflare R2 secret key for rclone configuration | No | - |
-| `CF_TOKEN` | Cloudflare tunnel token for cloudflared service | No | - |
+| `S3_ACCESS_KEY_ID` | AWS S3 access key for storage configuration | No | - |
+| `S3_SECRET_ACCESS_KEY` | AWS S3 secret key for storage configuration | No | - |
 | `COMFYUI_VERSION` | ComfyUI version to checkout (tag or "latest") | No | `latest` |
 | `WORKSPACE` | Workspace directory path | No | `/workspace` |
 
@@ -51,12 +50,12 @@ The `scripts/` directory contains hook scripts for Vast.ai serverless system:
 
 \* All three S3 credentials (`S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_BUCKET_NAME`) must be set to enable S3 storage.
 
-### Provisioning Configuration (provisioning_video.sh)
+### Provisioning Configuration (provisioning_face2photo.sh)
 
 | Variable | Description | Required | Default |
 |----------|-------------|----------|---------|
-| `WORKSPACE` | Workspace directory path | No | `/workspace` |
-| `MODEL_LOG` | Path to model download log file | No | `/var/log/portal/comfyui.log` |
+| `WORKSPACE` | Workspace directory path | No | `/opt` |
+| `MODEL_LOG` | Path to model download log file | No | `/var/log/provisioning.log` |
 
 ### Runtime Environment (set by entrypoint.sh)
 
@@ -68,17 +67,16 @@ The `scripts/` directory contains hook scripts for Vast.ai serverless system:
 
 ## Quick Start
 
-1. Set required environment variables in your Vast.ai instance template
-2. The entrypoint script will automatically configure rclone and cloudflared
+1. Set required environment variables in your SageMaker inference endpoint configuration
+2. The entrypoint script will automatically configure S3 access
 3. Provisioning script will download models and custom nodes
 4. ComfyUI API wrapper will start and be ready to accept requests
 
 ## Features
 
 - Automatic model provisioning from HuggingFace
-- R2/S3 storage integration via rclone
-- Cloudflare tunnel support
-- Video generation workflows (Wan 2.2)
+- AWS S3 storage integration
+- Face2Photo generation workflow (Qwen-Image-Edit models)
 - Custom node management
 - Disk space cleanup automation
 

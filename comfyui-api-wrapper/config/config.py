@@ -11,7 +11,7 @@ except ImportError:
     pass
 
 # Base API configuration
-COMFYUI_API_BASE = os.getenv('COMFYUI_API_BASE', 'http://127.0.0.1:8189')
+COMFYUI_API_BASE = os.getenv('COMFYUI_API_BASE', 'http://127.0.0.1:8188')
 
 # API endpoints
 COMFYUI_API_PROMPT = urljoin(COMFYUI_API_BASE, '/prompt')
@@ -36,9 +36,9 @@ OUTPUT_DIR = COMFYUI_INSTALL_DIR / 'output'
 S3_CONFIG = {
     "access_key_id": os.getenv("S3_ACCESS_KEY_ID", ""),
     "secret_access_key": os.getenv("S3_SECRET_ACCESS_KEY", ""),
-    "endpoint_url": os.getenv("S3_ENDPOINT_URL", ""),
-    "bucket_name": os.getenv("S3_BUCKET_NAME", ""),
-    "region": os.getenv("S3_REGION", ""),
+    "endpoint_url": os.getenv("S3_ENDPOINT_URL", "https://s3.eu-central-1.amazonaws.com"),
+    "bucket_name": os.getenv("S3_BUCKET_NAME", "photobooth-cloud"),
+    "region": os.getenv("S3_REGION", "eu-central-1"),
     "connect_timeout": int(os.getenv("S3_CONNECT_TIMEOUT", "60")),
     "connect_attempts": int(os.getenv("S3_CONNECT_ATTEMPTS", "3"))
 }

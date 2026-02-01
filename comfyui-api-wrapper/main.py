@@ -759,3 +759,108 @@ async def health(response: Response):
         response.status_code = 502
 
     return health_response
+
+
+# ===== AWS SAGEMAKER ENDPOINTS =====
+
+@app.get('/ping')
+async def ping(response: Response):
+    """
+    SageMaker health check endpoint for container readiness.
+    SageMaker expects 200 status if the container is ready to accept requests.
+    """
+    try:
+        # Check if ComfyUI is accessible
+        timeout = aiohttp.ClientTimeout(total=5)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(COMFYUI_API_SYSTEM_STATS) as stats_response:
+                if stats_response.status != 200:
+                    response.status_code = 503  # Service Unavailable
+                    return {"status": "unhealthy", "message": "ComfyUI is not accessible"}
+
+        # Container is ready
+        response.status_code = 200
+        return {"status": "healthy"}
+
+    except Exception as e:
+        logger.error(f"Ping health check failed: {e}")
+        response.status_code = 503
+        return {"status": "unhealthy", "message": str(e)}
+
+
+@app.post('/invocations', response_model=Result)
+async def invocations(
+    request: Request,
+    response: Response,
+    payload: Annotated[
+        Payload,
+        Body(
+            openapi_examples=Payload.get_openapi_examples()
+        ),
+    ],
+):
+    """
+    SageMaker inference endpoint. This is the main endpoint that SageMaker calls
+    for predictions. Maps to the synchronous generate endpoint for compatibility.
+
+    Accepts ComfyUI workflow payloads and returns results synchronously.
+    """
+    if not payload.input.request_id:
+        payload.input.request_id = str(uuid.uuid4())
+    request_id = payload.input.request_id
+
+    result_pending = Result(id=request_id)
+    await request_store.set(request_id, payload)
+    await response_store.set(request_id, result_pending)
+    await preprocess_queue.put(request_id)
+
+    logger.info(f"SageMaker invocation for request {request_id}")
+
+    try:
+        async with cancel_on_disconnect(request, request_id):
+            # Poll for result completion with timeout
+            max_wait_time = 300  # 5 minutes timeout
+            start_time = time.time()
+            poll_interval = 0.5
+
+            while True:
+                # Check timeout
+                elapsed = time.time() - start_time
+                if elapsed > max_wait_time:
+                    logger.warning(f"Request {request_id} timed out after {elapsed}s")
+                    timeout_result = Result(
+                        id=request_id,
+                        status="timeout",
+                        message=f"Request timed out after {max_wait_time} seconds"
+                    )
+                    await response_store.set(request_id, timeout_result)
+                    response.status_code = 504  # Gateway Timeout
+                    return timeout_result
+
+                # Get current result
+                result = await response_store.get(request_id)
+                if result and result.status in ["completed", "failed", "timeout", "cancelled"]:
+                    # Set appropriate HTTP status codes
+                    if result.status == "completed":
+                        response.status_code = 200
+                    elif result.status == "failed":
+                        response.status_code = 500
+                    elif result.status == "timeout":
+                        response.status_code = 504
+                    elif result.status == "cancelled":
+                        response.status_code = 499
+
+                    return result
+
+                await asyncio.sleep(poll_interval)
+
+    except asyncio.CancelledError:
+        # Handle client disconnection
+        return JSONResponse(
+            status_code=499,
+            content=Result(
+                id=request_id,
+                status="cancelled",
+                message="Client closed connection"
+            ).__dict__,
+        )

@@ -1,60 +1,29 @@
 #!/bin/bash
 
-#set -euo pipefail
+set -euo pipefail
 
 ### Configuration ###
 WORKSPACE_DIR="/opt"
 MODELS_DIR="${WORKSPACE_DIR}/ComfyUI/models"
-HF_SEMAPHORE_DIR="/workspace/hf_download_sem_$$"
+HF_SEMAPHORE_DIR="/workspace//hf_download_sem_$$"
 HF_MAX_PARALLEL=3
 MODEL_LOG=${MODEL_LOG:-/var/log/provisioning.log}
 
 NODES=(
-    "https://github.com/evanspearman/ComfyMath"
-    "https://github.com/AlekPet/ComfyUI_Custom_Nodes_AlekPet"
-    "https://github.com/pythongosssss/ComfyUI-Custom-Scripts"
-    "https://github.com/kijai/ComfyUI-KJNodes"
-    "https://github.com/ssitu/ComfyUI_UltimateSDUpscale"
-    "https://github.com/cubiq/ComfyUI_essentials"
-    "https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite"
-    "https://github.com/Fannovel16/ComfyUI-Frame-Interpolation"
+    "https://github.com/city96/ComfyUI-GGUF"
     "https://github.com/chflame163/ComfyUI_LayerStyle"
-    "https://github.com/kijai/ComfyUI-MMAudio"
-    "https://github.com/MoonHugo/ComfyUI-FFmpeg"
-    "https://github.com/kijai/ComfyUI-WanVideoWrapper"
-    "https://github.com/christian-byrne/audio-separation-nodes-comfyui"
-    "https://github.com/Jonseed/ComfyUI-Detail-Daemon"
-    "https://github.com/vrgamegirl19/comfyui-vrgamedevgirl"
-    "https://github.com/WASasquatch/was-node-suite-comfyui"
-    "https://github.com/Suzie1/ComfyUI_Comfyroll_CustomNodes"
-    "https://github.com/yolain/ComfyUI-Easy-Use"
-    "https://github.com/kijai/ComfyUI-segment-anything-2"
-    "https://github.com/rgthree/rgthree-comfy"
-    "https://github.com/Fannovel16/comfyui_controlnet_aux"
-    "https://github.com/melMass/comfy_mtb"
-    "https://github.com/kijai/ComfyUI-WanAnimatePreprocess.git"
 )
 
 # Model declarations: "URL|OUTPUT_PATH"
 HF_MODELS=(
-  "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/text_encoders/umt5_xxl_fp16.safetensors
-  |$MODELS_DIR/text_encoders/umt5_xxl_fp16.safetensors"
-  "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors
-  |$MODELS_DIR/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors"
-  "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/diffusion_models/wan2.2_i2v_low_noise_14B_fp16.safetensors
-  |$MODELS_DIR/diffusion_models/wan2.2_i2v_low_noise_14B_fp16.safetensors"
-  "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/diffusion_models/wan2.2_i2v_high_noise_14B_fp16.safetensors
-  |$MODELS_DIR/diffusion_models/wan2.2_i2v_high_noise_14B_fp16.safetensors"
-  "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/diffusion_models/wan2.2_animate_14B_bf16.safetensors
-  |$MODELS_DIR/diffusion_models/wan2.2_animate_14B_bf16.safetensors"
-  "https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/diffusion_models/wan2.1_i2v_480p_14B_fp16.safetensors
-  |$MODELS_DIR/diffusion_models/wan2.1_i2v_480p_14B_fp16.safetensors"
-  "https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/diffusion_models/wan2.1_i2v_720p_14B_fp16.safetensors
-  |$MODELS_DIR/diffusion_models/wan2.1_i2v_720p_14B_fp16.safetensors"
-  "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/diffusion_models/wan2.2_t2v_high_noise_14B_fp8_scaled.safetensors
-  |$MODELS_DIR/diffusion_models/wan2.2_t2v_high_noise_14B_fp8_scaled.safetensors"
-  "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/diffusion_models/wan2.2_t2v_low_noise_14B_fp8_scaled.safetensors
-  |$MODELS_DIR/diffusion_models/wan2.2_t2v_low_noise_14B_fp8_scaled.safetensors"
+  "https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI/resolve/main/split_files/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors
+  |$MODELS_DIR/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors"
+  "https://huggingface.co/unsloth/Qwen-Image-Edit-2511-GGUF/resolve/main/qwen-image-edit-2511-Q4_K_M.gguf
+  |$MODELS_DIR/diffusion_models/qwen-image-edit-2511-Q4_K_M.gguf"
+  "https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI/resolve/main/split_files/vae/qwen_image_vae.safetensors
+  |$MODELS_DIR/vae/qwen_image_vae.safetensors"
+  "https://huggingface.co/lightx2v/Qwen-Image-Edit-2511-Lightning/resolve/main/Qwen-Image-Edit-2511-Lightning-8steps-V1.0-bf16.safetensors
+  |$MODELS_DIR/loras/Qwen-Image-Edit-2511-Lightning-8steps-V1.0-bf16.safetensors"
 )
 ### End Configuration ###
 
@@ -81,7 +50,7 @@ install_custom_nodes() {
             printf "Downloading node: %s...\n" "${repo}"
             git clone "${repo}" "${path}" --recursive
             if [[ -e $requirements ]]; then
-                pip install --no-cache-dir -r "${requirements}"
+                uv pip install --python /venv/main/bin/python --no-cache-dir -r "${requirements}"
             fi
         fi
     done
@@ -91,16 +60,17 @@ install_custom_nodes() {
 }
 
 install_sageattention() {
-    pip install --no-cache-dir packaging
+    uv pip install --python /venv/main/bin/python --no-cache-dir packaging
     git clone https://github.com/thu-ml/SageAttention.git "${WORKSPACE_DIR}/sageattention"
     cd "${WORKSPACE_DIR}/sageattention"
     export EXT_PARALLEL=4 NVCC_APPEND_FLAGS="--threads 8" MAX_JOBS=32
-    python setup.py install
+    /venv/main/bin/python setup.py install
 }
 
 main() {
     set_cleanup_job
     mkdir -p "$HF_SEMAPHORE_DIR"
+    write_workflow
     pids=()
 
     install_custom_nodes
@@ -113,22 +83,12 @@ main() {
         pids+=($!)
     done
 
-    rclone copy -Pv r2:video-models/models/vae/ "$MODELS_DIR/vae/" --s3-chunk-size=100M --transfers=10
-    rclone copy -Pv r2:video-models/models/loras/ "$MODELS_DIR/loras/" --s3-chunk-size=100M --transfers=10
-    rclone copy -Pv r2:video-models/fonts/ "${WORKSPACE_DIR}/ComfyUI/custom_nodes/ComfyUI-FFmpeg/fonts/"
-    rclone copy -Pv r2:video-models/models/mmaudio/ "$MODELS_DIR/mmaudio/" --s3-chunk-size=100M --transfers=10
-    rclone copy -Pv r2:video-models/models/detection/ "$MODELS_DIR/detection/" --s3-chunk-size=100M --transfers=10
-    rclone copy -Pv r2:video-models/models/clip_vision/ "$MODELS_DIR/clip_vision/" --s3-chunk-size=100M --transfers=10
+    rclone copy -Pv s3:photobooth-models/loras/ "$MODELS_DIR/loras/" --s3-chunk-size=100M --transfers=10
 
     # Wait for each job and check exit status
     for pid in "${pids[@]}"; do
         wait "$pid" || exit 1
     done
-
-    # For CUDA 13 support
-    pip uninstall onnxruntime-gpu -y
-    pip install coloredlogs flatbuffers numpy packaging protobuf sympy
-    pip install --pre --index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/ort-cuda-13-nightly/pypi/simple/ onnxruntime-gpu
 
     #supervisorctl restart comfyui
     # Wait for ComfyUI to start up
