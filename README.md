@@ -6,19 +6,18 @@ Custom implementation of ComfyUI API wrapper with serverless support for AWS Sag
 
 This project provides:
 - **ComfyUI API Wrapper**: FastAPI-based wrapper for ComfyUI with queue management and S3 storage support
-- **Serverless Scripts**: Automated provisioning and entrypoint scripts for AWS SageMaker inference endpoints
-- **Face2Photo Workflow**: Pre-configured workflow for face-to-photo generation using Qwen-Image-Edit models
+- **Serverless Scripts**: Automated provisioning, AWS SageMaker inference endpoints
+- **Face2Photo Workflow**: Pre-configured workflow for face-to-photo generation using Qwen-Image-Edit model and custom LoRAs
 
 ## Scripts Directory
 
 The `scripts/` directory contains hook scripts for AWS SageMaker deployment:
 
-- **`entrypoint.sh`**: Container startup script that configures S3 access and initializes the ComfyUI environment
 - **`provisioning_face2photo.sh`**: Provisions face-to-photo generation models (Qwen-Image-Edit), custom nodes, and required dependencies
 
 ## Environment Variables
 
-### Container Startup (entrypoint.sh)
+### ComfyUI API Wrapper Startup
 
 | Variable | Description | Required | Default |
 |----------|-------------|----------|---------|
@@ -57,20 +56,12 @@ The `scripts/` directory contains hook scripts for AWS SageMaker deployment:
 | `WORKSPACE` | Workspace directory path | No | `/opt` |
 | `MODEL_LOG` | Path to model download log file | No | `/var/log/provisioning.log` |
 
-### Runtime Environment (set by entrypoint.sh)
-
-| Variable | Value | Description |
-|----------|-------|-------------|
-| `SERVERLESS` | `true` | Indicates serverless mode |
-| `BACKEND` | `comfyui-json` | Backend type identifier |
-| `MODEL_LOG` | `/var/log/portal/comfyui.log` | Model provisioning log path |
 
 ## Quick Start
 
 1. Set required environment variables in your SageMaker inference endpoint configuration
-2. The entrypoint script will automatically configure S3 access
-3. Provisioning script will download models and custom nodes
-4. ComfyUI API wrapper will start and be ready to accept requests
+2. Provisioning script will download models and custom nodes
+3. ComfyUI API wrapper will start and be ready to accept requests
 
 ## Features
 

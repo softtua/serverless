@@ -482,7 +482,7 @@ class PostprocessWorker:
             folder = "video" if media_type == "output" else media_type
 
             # Construct new filename with request_id suffix
-            s3_key = f"{user_id}/{folder}/{file_stem}_{request_suffix}{file_suffix}"
+            s3_key = f"media/{user_id}/{folder}/{file_stem}_{request_suffix}{file_suffix}"
 
             logger.debug(f"Uploading {s3_key} to bucket {bucket_name}")
 
@@ -496,16 +496,15 @@ class PostprocessWorker:
                 )
 
             # Generate presigned URL
-            #presigned_url = await s3_client.generate_presigned_url(
-            #    'get_object',
-            #    Params={'Bucket': bucket_name, 'Key': s3_key},
-            #    ExpiresIn=604800  # 7 days
-            #)
+            presigned_url = await s3_client.generate_presigned_url(
+                'get_object',
+                Params={'Bucket': bucket_name, 'Key': s3_key},
+                ExpiresIn=604800  # 7 days
+            )
             
-            #logger.debug(f"Generated presigned URL for {s3_key}")
-            mediaUrl = f"https://media.proxima.art/{s3_key}"
+            logger.debug(f"Generated presigned URL for {s3_key}")
 
-            return mediaUrl
+            return presigned_url
             
         except Exception as e:
             logger.error(f"Error uploading {local_path}: {e}")

@@ -186,8 +186,8 @@ release_slot() {
 
 # Add a cron job to remove older (oldest +24 hours) output files if disk space is low
 set_cleanup_job() {
-    if [[ ! -f /opt/proxima-build/bin/clean-output.sh ]]; then
-        cat > /opt/proxima-build/bin/clean-output.sh << 'CLEAN_OUTPUT'
+    if [[ ! -f /opt/territory/bin/clean-output.sh ]]; then
+        cat > /opt/territory/bin/clean-output.sh << 'CLEAN_OUTPUT'
 #!/bin/bash
 output_dir="/opt/ComfyUI/output/"
 min_free_mb=512
@@ -205,11 +205,11 @@ if [[ "$available_space" -lt "$min_free_mb" ]]; then
     fi
 fi
 CLEAN_OUTPUT
-        chmod +x /opt/proxima-build/bin/clean-output.sh
+        chmod +x /opt/territory/bin/clean-output.sh
     fi
 
     if ! crontab -l 2>/dev/null | grep -qF 'clean-output.sh'; then
-        (crontab -l 2>/dev/null; echo '*/10 * * * * /opt/proxima-build/bin/clean-output.sh') | crontab -
+        (crontab -l 2>/dev/null; echo '*/10 * * * * /opt/territory/bin/clean-output.sh') | crontab -
     fi
 }
 
