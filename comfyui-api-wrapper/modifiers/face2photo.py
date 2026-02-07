@@ -9,7 +9,7 @@ Handler classes are generally bound to a specific workflow file.
 To modify values we have to be confident in the json structure.
 """
 
-class Image2Image(BaseModifier):
+class Face2Photo(BaseModifier):
     
     WORKFLOW_JSON = "workflows/face2photo.json"
     
@@ -34,7 +34,7 @@ class Image2Image(BaseModifier):
         
         self.workflow["68"]["inputs"]["prompt"] = await self.modify_workflow_value(
             "prompt",
-            "a studio portrait with a dramatic lighting style, The light is soft and directional, casting a warm orange glow on the woman's face, The light falls at an angle slightly above and to the right of the woman, creating a gentle shadow on the left side, The woman has has long golden hair and is standing with hands clasped in front, looking slightly to the left, The background is a dark gradient, emphasizing the subject")
+            "territory orange style, portrait of the same person, directional lighting, the light falls at a 45-degree angle, creating a gentle highlight of the person's face and shoulders. The background is a dark gradient, emphasizing the subject. The person stands with arms crossed, looking slightly to the side, exuding confidence.")
         self.workflow["41"]["inputs"]["image"] = await self.modify_workflow_value(
             "input_image",
             "")

@@ -1,0 +1,30 @@
+{
+  "input": {
+    "request_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+    "modifier": "Face2Photo",
+    "modifications": {
+      "seed": 777,
+      "steps": 8,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "prompt": "territory orange style, portrait of the same person, directional lighting, the light falls at a 45-degree angle, creating a gentle highlight of the person's face and shoulders. The background is a dark gradient, emphasizing the subject. The person stands with arms crossed, looking slightly to the side, exuding confidence.",
+      "input_image": "photo_2024-12-27_14-44-50.jpg"
+    },
+    "s3": {
+      "access_key_id": "AKIAIOSFODNN7EXAMPLE",
+      "secret_access_key": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+      "endpoint_url": "https://s3.amazonaws.com",
+      "bucket_name": "my-comfyui-outputs",
+      "region": "us-east-1"
+    },
+    "webhook": {
+      "url": "https://api.example.com/webhooks/generation-complete",
+      "extra_params": {
+        "user_id": "12345",
+        "job_type": "face2photo",
+        "timestamp": "2026-02-07T14:30:00Z"
+      },
+      "timeout": 30
+    }
+  }
+}

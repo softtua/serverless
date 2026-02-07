@@ -63,6 +63,141 @@ The `scripts/` directory contains hook scripts for AWS SageMaker deployment:
 2. Provisioning script will download models and custom nodes
 3. ComfyUI API wrapper will start and be ready to accept requests
 
+## API Usage
+
+### Request Payload Structure
+
+The API accepts POST requests with the following structure:
+
+```json
+{
+  "input": {
+    "request_id": "optional-uuid-v4",
+    "modifier": "ModifierClassName",
+    "modifications": {
+      "parameter1": "value1",
+      "parameter2": 42
+    },
+    "workflow_json": {
+      // Alternative to modifier: direct ComfyUI workflow
+    },
+    "s3": {
+      "access_key_id": "your-access-key",
+      "secret_access_key": "your-secret-key",
+      "endpoint_url": "https://s3.amazonaws.com",
+      "bucket_name": "your-bucket",
+      "region": "us-east-1"
+    },
+    "webhook": {
+      "url": "https://your-webhook-endpoint.com",
+      "extra_params": {
+        "custom_field": "value"
+      }
+    }
+  }
+}
+```
+
+**Note:** `modifier` and `workflow_json` are mutually exclusive - you must provide one or the other, but not both.
+
+### Face2Photo Modifier
+
+The `Face2Photo` modifier transforms face images into professional portraits using the Qwen-Image-Edit model with custom LoRAs.
+
+#### Available Parameters
+
+| Parameter | Type | Description | Default |
+|-----------|------|-------------|---------|
+| `seed` | int | Random seed for generation (0 to 4294967295) | Random value |
+| `steps` | int | Number of sampling steps | 8 |
+| `sampler_name` | string | Sampler algorithm (e.g., "euler", "dpmpp_2m") | "euler" |
+| `scheduler` | string | Scheduler type (e.g., "simple", "normal") | "simple" |
+| `prompt` | string | Text prompt describing the desired output | "territory orange style, portrait of the same person..." |
+| `input_image` | string | S3 key or URL of the input face image | Required |
+
+#### Example Request - Face2Photo with S3 Storage
+
+```json
+{
+  "input": {
+    "request_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+    "modifier": "Face2Photo",
+    "modifications": {
+      "seed": 123456789,
+      "steps": 8,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "prompt": "territory orange style, professional portrait of the same person, studio lighting with soft shadows, neutral background, business attire, confident expression",
+      "input_image": "input/face_photo_001.jpg"
+    },
+    "s3": {
+      "access_key_id": "AKIAIOSFODNN7EXAMPLE",
+      "secret_access_key": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+      "endpoint_url": "https://s3.amazonaws.com",
+      "bucket_name": "my-comfyui-outputs",
+      "region": "us-east-1"
+    },
+    "webhook": {
+      "url": "https://api.myapp.com/webhooks/image-complete",
+      "extra_params": {
+        "user_id": "12345",
+        "job_type": "face2photo"
+      }
+    }
+  }
+}
+```
+
+#### Example Request - Face2Photo with URL Input
+
+```json
+{
+  "input": {
+    "request_id": "a1b2c3d4-e5f6-4a5b-8c9d-0e1f2a3b4c5d",
+    "modifier": "Face2Photo",
+    "modifications": {
+      "steps": 10,
+      "prompt": "territory orange style, cinematic portrait of the same person, dramatic lighting, moody atmosphere",
+      "input_image": "https://example.com/images/source-face.jpg"
+    },
+    "s3": {
+      "bucket_name": "my-outputs",
+      "access_key_id": "your-key",
+      "secret_access_key": "your-secret"
+    }
+  }
+}
+```
+
+#### Example Request - Minimal Face2Photo
+
+```json
+{
+  "input": {
+    "modifier": "Face2Photo",
+    "modifications": {
+      "input_image": "input/my-face.jpg"
+    }
+  }
+}
+```
+
+**Note:** When using minimal configuration, default values will be applied for all parameters except `input_image`, which is required.
+
+### Response Format
+
+The API returns a JSON response with the S3 key(s) of generated images:
+
+```json
+{
+  "request_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+  "status": "completed",
+  "outputs": [
+    "outputs/20260207-143022_face2photo_abc123.png"
+  ]
+}
+```
+
 ## Features
 
 - Automatic model provisioning from HuggingFace
@@ -70,4 +205,5 @@ The `scripts/` directory contains hook scripts for AWS SageMaker deployment:
 - Face2Photo generation workflow (Qwen-Image-Edit models)
 - Custom node management
 - Disk space cleanup automation
+- Webhook notifications for async processing
 
