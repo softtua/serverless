@@ -218,7 +218,7 @@ class PostprocessWorker:
                                     processed.update(pending_metadata)
                                 processed_files.append(processed)
                         # Handle text output type (file paths)
-                        if isinstance(item, str) and item.startswith("/opt/ComfyUI/output"):
+                        if isinstance(item, str) and item.startswith("/opt/ComfyUI/output") and node_id != "files":
                             # Process string output as a file path
                             processed = await self._process_output_file_from_text_node(
                                 item,
