@@ -73,6 +73,7 @@ The API accepts POST requests with the following structure:
 {
   "input": {
     "request_id": "optional-uuid-v4",
+    "user_id": "user-identifier",
     "modifier": "ModifierClassName",
     "modifications": {
       "parameter1": "value1",
@@ -108,12 +109,17 @@ The `Face2Photo` modifier transforms face images into professional portraits usi
 
 | Parameter | Type | Description | Default |
 |-----------|------|-------------|---------|
+| `input_image` | string | S3 key or URL of the input face image | **Required** |
+| `prompt` | string | Text prompt describing the desired output | "territory orange style, portrait of the same person..." |
 | `seed` | int | Random seed for generation (0 to 4294967295) | Random value |
-| `steps` | int | Number of sampling steps | 8 |
+| `steps` | int | Number of sampling steps | 8 (normal) / 5 (fast) |
 | `sampler_name` | string | Sampler algorithm (e.g., "euler", "dpmpp_2m") | "euler" |
 | `scheduler` | string | Scheduler type (e.g., "simple", "normal") | "simple" |
-| `prompt` | string | Text prompt describing the desired output | "territory orange style, portrait of the same person..." |
-| `input_image` | string | S3 key or URL of the input face image | Required |
+| `number_images` | int | Number of images to generate in a single batch | 1 |
+| `width` | int | Output image width in pixels | 1024 |
+| `height` | int | Output image height in pixels | 1024 |
+| `face_strength` | int | Face similarity strength (0-100). Higher values preserve more facial features | 70 |
+| `mode` | string | Generation mode: "normal" (8 steps, higher quality) or "fast" (5 steps, faster) | "normal" |
 
 #### Example Request - Face2Photo with S3 Storage
 
@@ -121,14 +127,20 @@ The `Face2Photo` modifier transforms face images into professional portraits usi
 {
   "input": {
     "request_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+    "user_id": "user_12345",
     "modifier": "Face2Photo",
     "modifications": {
+      "input_image": "input/face_photo_001.jpg",
+      "prompt": "territory orange style, professional portrait of the same person, studio lighting with soft shadows, neutral background, business attire, confident expression",
       "seed": 123456789,
       "steps": 8,
       "sampler_name": "euler",
       "scheduler": "simple",
-      "prompt": "territory orange style, professional portrait of the same person, studio lighting with soft shadows, neutral background, business attire, confident expression",
-      "input_image": "input/face_photo_001.jpg"
+      "number_images": 1,
+      "width": 1024,
+      "height": 1024,
+      "face_strength": 80,
+      "mode": "normal"
     },
     "s3": {
       "access_key_id": "AKIAIOSFODNN7EXAMPLE",
@@ -140,7 +152,7 @@ The `Face2Photo` modifier transforms face images into professional portraits usi
     "webhook": {
       "url": "https://api.myapp.com/webhooks/image-complete",
       "extra_params": {
-        "user_id": "12345",
+        "user_id": "user_12345",
         "job_type": "face2photo"
       }
     }
@@ -154,11 +166,12 @@ The `Face2Photo` modifier transforms face images into professional portraits usi
 {
   "input": {
     "request_id": "a1b2c3d4-e5f6-4a5b-8c9d-0e1f2a3b4c5d",
+    "user_id": "user_67890",
     "modifier": "Face2Photo",
     "modifications": {
-      "steps": 10,
+      "input_image": "https://example.com/images/source-face.jpg",
       "prompt": "territory orange style, cinematic portrait of the same person, dramatic lighting, moody atmosphere",
-      "input_image": "https://example.com/images/source-face.jpg"
+      "steps": 10
     },
     "s3": {
       "bucket_name": "my-outputs",
@@ -186,17 +199,26 @@ The `Face2Photo` modifier transforms face images into professional portraits usi
 
 ### Response Format
 
-The API returns a JSON response with the S3 key(s) of generated images:
+The API returns a JSON response with the generated images:
 
 ```json
 {
-  "request_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+  "id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
   "status": "completed",
-  "outputs": [
-    "outputs/20260207-143022_face2photo_abc123.png"
+  "message": "Generation completed successfully",
+  "output": [
+    {
+      "filename": "face2photo_20260207-143022.png",
+      "local_path": "/workspace/ComfyUI/output/face2photo_20260207-143022.png",
+      "url": "s3://my-comfyui-outputs/media/user_12345/output/face2photo_f47ac10b-58cc-4372.png",
+      "type": "output",
+      "node_id": "9"
+    }
   ]
 }
 ```
+
+**Note:** When S3 is configured with `user_id`, files are organized as `s3://{bucket}/media/{user_id}/{type}/{filename}_{request_id_prefix}.{ext}`. The `url` field contains the full S3 path that can be used to generate presigned URLs on-demand.
 
 ## Features
 

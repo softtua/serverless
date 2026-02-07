@@ -446,18 +446,18 @@ class PostprocessWorker:
                 
                 # Wait for all uploads
                 if tasks:
-                    presigned_urls = await asyncio.gather(*tasks, return_exceptions=True)
-                    
-                    # Update result objects with URLs
-                    for obj, url_result in zip(result.output, presigned_urls):
-                        if isinstance(url_result, Exception):
-                            logger.error(f"Upload failed for {obj.get('local_path')}: {url_result}")
-                            obj["upload_error"] = str(url_result)
-                        elif url_result:
-                            obj["url"] = url_result
-                            
-                    logger.info(f"Uploaded {len([u for u in presigned_urls if u and not isinstance(u, Exception)])} assets for {request_id}")
-                    
+                    s3_paths = await asyncio.gather(*tasks, return_exceptions=True)
+
+                    # Update result objects with S3 paths
+                    for obj, path_result in zip(result.output, s3_paths):
+                        if isinstance(path_result, Exception):
+                            logger.error(f"Upload failed for {obj.get('local_path')}: {path_result}")
+                            obj["upload_error"] = str(path_result)
+                        elif path_result:
+                            obj["url"] = path_result
+
+                    logger.info(f"Uploaded {len([p for p in s3_paths if p and not isinstance(p, Exception)])} assets for {request_id}")
+
         except Exception as e:
             logger.error(f"Error uploading assets for {request_id}: {e}")
             raise
@@ -467,7 +467,7 @@ class PostprocessWorker:
         return None
 
     async def upload_file_and_get_url(self, request_id: str, user_id: str, s3_client, bucket_name: str, local_path: str, media_type: str) -> Optional[str]:
-        """Upload single file and return presigned URL"""
+        """Upload single file and return S3 path (s3://bucket/key format)"""
         try:
             file_path = Path(local_path)
 
@@ -479,7 +479,7 @@ class PostprocessWorker:
             file_suffix = file_path.suffix  # extension with dot (e.g., '.jpg')
 
             # Determine folder based on media_type
-            folder = "video" if media_type == "output" else media_type
+            folder = "images" if media_type == "output" else media_type
 
             # Construct new filename with request_id suffix
             s3_key = f"media/{user_id}/{folder}/{file_stem}_{request_suffix}{file_suffix}"
@@ -495,17 +495,13 @@ class PostprocessWorker:
                     Body=file_content
                 )
 
-            # Generate presigned URL
-            presigned_url = await s3_client.generate_presigned_url(
-                'get_object',
-                Params={'Bucket': bucket_name, 'Key': s3_key},
-                ExpiresIn=604800  # 7 days
-            )
-            
-            logger.debug(f"Generated presigned URL for {s3_key}")
+            # Return S3 path in s3:// format
+            s3_path = f"s3://{bucket_name}/{s3_key}"
 
-            return presigned_url
-            
+            logger.debug(f"Uploaded to {s3_path}")
+
+            return s3_path
+
         except Exception as e:
             logger.error(f"Error uploading {local_path}: {e}")
             raise

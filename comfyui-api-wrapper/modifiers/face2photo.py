@@ -45,7 +45,12 @@ class Face2Photo(BaseModifier):
         self.workflow["65"]["inputs"]["scheduler"] = await self.modify_workflow_value(
             "scheduler",
             "simple")
-        
+
+
+        self.workflow["66"]["inputs"]["batch_size"] = await self.modify_workflow_value("number_images", 1)
+        self.workflow["66"]["inputs"]["width"] = await self.modify_workflow_value("width", 1024)
+        self.workflow["66"]["inputs"]["height"] = await self.modify_workflow_value("height", 1024)
+
         self.workflow["68"]["inputs"]["prompt"] = await self.modify_workflow_value(
             "prompt",
             "territory orange style, portrait of the same person, directional lighting, the light falls at a 45-degree angle, creating a gentle highlight of the person's face and shoulders. The background is a dark gradient, emphasizing the subject. The person stands with arms crossed, looking slightly to the side, exuding confidence.")
