@@ -42,6 +42,27 @@
       "title": "Load Image"
     }
   },
+  "42": {
+    "inputs": {
+      "aspect_ratio": "original",
+      "proportional_width": 1,
+      "proportional_height": 1,
+      "fit": "letterbox",
+      "method": "nearest",
+      "round_to_multiple": "16",
+      "scale_to_side": "longest",
+      "scale_to_length": 1024,
+      "background_color": "#000000",
+      "image": [
+        "41",
+        0
+      ]
+    },
+    "class_type": "LayerUtility: ImageScaleByAspectRatio V2",
+    "_meta": {
+      "title": "LayerUtility: ImageScaleByAspectRatio V2"
+    }
+  },
   "61": {
     "inputs": {
       "clip_name": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
@@ -98,8 +119,8 @@
   },
   "66": {
     "inputs": {
-      "width": 720,
-      "height": 1280,
+      "width": 1024,
+      "height": 1024,
       "batch_size": 1
     },
     "class_type": "EmptySD3LatentImage",
@@ -138,7 +159,7 @@
         0
       ],
       "image1": [
-        "41",
+        "42",
         0
       ]
     },
@@ -165,7 +186,7 @@
         0
       ],
       "image1": [
-        "41",
+        "42",
         0
       ]
     },
@@ -205,7 +226,7 @@
   "71": {
     "inputs": {
       "lora_name": "Qwen-Image-Edit-F2P.safetensors",
-      "strength_model": 0.65,
+      "strength_model": 0.70,
       "model": [
         "72",
         0
@@ -218,14 +239,29 @@
   },
   "73": {
     "inputs": {
+      "output_path": "/opt/ComfyUI/output",
+      "filename_prefix": "photo",
+      "filename_delimiter": "_",
+      "filename_number_padding": 1,
+      "filename_number_start": "false",
+      "extension": "jpg",
+      "dpi": 300,
+      "quality": 90,
+      "optimize_image": "true",
+      "lossless_webp": "false",
+      "overwrite_mode": "false",
+      "show_history": "false",
+      "show_history_by_prefix": "false",
+      "embed_workflow": "false",
+      "show_previews": "true",
       "images": [
         "8",
         0
       ]
     },
-    "class_type": "PreviewImage",
+    "class_type": "Image Save",
     "_meta": {
-      "title": "Preview Image"
+      "title": "Image Save"
     }
   }
 }

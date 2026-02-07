@@ -12,6 +12,7 @@ MODEL_LOG=${MODEL_LOG:-/var/log/provisioning.log}
 NODES=(
     "https://github.com/city96/ComfyUI-GGUF"
     "https://github.com/chflame163/ComfyUI_LayerStyle"
+    "https://github.com/WASasquatch/was-node-suite-comfyui"
 )
 
 # Model declarations: "URL|OUTPUT_PATH"

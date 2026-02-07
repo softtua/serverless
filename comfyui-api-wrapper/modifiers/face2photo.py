@@ -19,12 +19,26 @@ class Face2Photo(BaseModifier):
 
     async def apply_modifications(self):
         timestr = time.strftime("%Y%m%d-%H%M%S")
+
+        # Get mode to determine if fast mode is enabled
+        mode = await self.modify_workflow_value("mode", "normal")
+
+        # Handle seed
         self.workflow["65"]["inputs"]["seed"] = await self.modify_workflow_value(
             "seed",
             random.randint(0,2**32))
-        self.workflow["65"]["inputs"]["steps"] = await self.modify_workflow_value(
-            "steps",
-            8)
+
+        # Handle steps - check if explicitly provided or use mode-based default
+        if "steps" in self.modifications:
+            # Steps explicitly provided, use it
+            self.workflow["65"]["inputs"]["steps"] = await self.modify_workflow_value("steps", 8)
+        else:
+            # Steps not provided, use mode-based default
+            if mode == "fast":
+                self.workflow["65"]["inputs"]["steps"] = 5
+            else:
+                self.workflow["65"]["inputs"]["steps"] = 8
+
         self.workflow["65"]["inputs"]["sampler_name"] = await self.modify_workflow_value(
             "sampler_name",
             "euler")
@@ -38,4 +52,15 @@ class Face2Photo(BaseModifier):
         self.workflow["41"]["inputs"]["image"] = await self.modify_workflow_value(
             "input_image",
             "")
+
+        # Handle face_strength (0-100, maps to 0.0-1.0)
+        face_strength = await self.modify_workflow_value("face_strength", 70)
+        self.workflow["71"]["inputs"]["strength_model"] = face_strength / 100.0
+
+        # Handle mode - change LoRA for fast mode
+        if mode == "fast":
+            self.workflow["70"]["inputs"]["lora_name"] = "Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16.safetensors"
+        else:
+            self.workflow["70"]["inputs"]["lora_name"] = "Qwen-Image-Edit-2511-Lightning-8steps-V1.0-bf16.safetensors"
+
         await super().apply_modifications()

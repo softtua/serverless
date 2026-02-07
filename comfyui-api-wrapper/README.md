@@ -290,6 +290,68 @@ The BaseModifier automatically:
 }
 ```
 
+### Face2Photo Modifier
+
+The `Face2Photo` modifier transforms face images into professional portraits using the Qwen Image Edit model with Territory Orange styling.
+
+**Available Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `input_image` | string (URL or filename) | **Required** | Source face image to transform |
+| `prompt` | string | Default portrait prompt | Text description of the desired output style |
+| `seed` | integer | Random | Random seed for reproducibility (0 to 2³²) |
+| `steps` | integer | 8 (normal) / 5 (fast) | Number of diffusion steps |
+| `sampler_name` | string | "euler" | Sampler algorithm to use |
+| `scheduler` | string | "simple" | Scheduler type |
+| `face_strength` | integer (0-100) | 70 | Face similarity strength. Higher values preserve more facial features. 70 = 0.70, 100 = 1.0 |
+| `mode` | string | "normal" | Generation mode: "normal" (8 steps, higher quality) or "fast" (5 steps, faster generation) |
+
+**Example Request:**
+
+```json
+{
+  "input": {
+    "modifier": "Face2Photo",
+    "modifications": {
+      "input_image": "https://example.com/face.jpg",
+      "prompt": "territory orange style, professional headshot, studio lighting, business attire, confident expression",
+      "seed": 42,
+      "steps": 8,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "face_strength": 80,
+      "mode": "normal"
+    },
+    "s3": {
+      "access_key_id": "your-access-key",
+      "secret_access_key": "your-secret-key",
+      "endpoint_url": "https://s3.amazonaws.com",
+      "bucket_name": "your-bucket",
+      "region": "us-east-1"
+    },
+    "webhook": {
+      "url": "https://your-webhook-endpoint.com/callback",
+      "extra_params": {
+        "user_id": "12345",
+        "project_id": "abc-def"
+      }
+    }
+  }
+}
+```
+
+**Mode Behavior:**
+- **normal mode**: Uses 8-step Lightning LoRA for higher quality (default)
+- **fast mode**: Uses 4-step Lightning LoRA and reduces steps to 5 for faster generation
+- When `steps` is explicitly provided, it overrides the mode-based default
+
+**Face Strength Examples:**
+- `50`: Loose interpretation, more artistic freedom
+- `70`: Balanced preservation of facial features (default)
+- `85`: Strong facial similarity
+- `100`: Maximum facial feature preservation
+
 ## Response Format
 
 All endpoints return a standardized result object:
