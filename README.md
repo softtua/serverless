@@ -120,6 +120,7 @@ The `Face2Photo` modifier transforms face images into professional portraits usi
 | `height` | int | Output image height in pixels | 1024 |
 | `face_strength` | int | Face similarity strength (0-100). Higher values preserve more facial features | 70 |
 | `mode` | string | Generation mode: "normal" (8 steps, higher quality) or "fast" (5 steps, faster) | "normal" |
+| `style` | string | Style preset: "territory-orange" (custom branded style) or "classic-studio" (neutral style) | "territory-orange" |
 
 #### Example Request - Face2Photo with S3 Storage
 
@@ -140,7 +141,8 @@ The `Face2Photo` modifier transforms face images into professional portraits usi
       "width": 1024,
       "height": 1024,
       "face_strength": 80,
-      "mode": "normal"
+      "mode": "normal",
+      "style": "territory-orange"
     },
     "s3": {
       "access_key_id": "AKIAIOSFODNN7EXAMPLE",
@@ -171,7 +173,8 @@ The `Face2Photo` modifier transforms face images into professional portraits usi
     "modifications": {
       "input_image": "https://example.com/images/source-face.jpg",
       "prompt": "territory orange style, cinematic portrait of the same person, dramatic lighting, moody atmosphere",
-      "steps": 10
+      "steps": 10,
+      "style": "classic-studio"
     },
     "s3": {
       "bucket_name": "my-outputs",

@@ -68,4 +68,11 @@ class Face2Photo(BaseModifier):
         else:
             self.workflow["70"]["inputs"]["lora_name"] = "Qwen-Image-Edit-2511-Lightning-8steps-V1.0-bf16.safetensors"
 
+        # Handle style - set LoRA strength for territory-orange style
+        style = await self.modify_workflow_value("style", "territory-orange")
+        if style != "territory-orange":
+            self.workflow["72"]["inputs"]["strength_model"] = 0.0
+        else:
+            self.workflow["72"]["inputs"]["strength_model"] = 0.8
+
         await super().apply_modifications()
