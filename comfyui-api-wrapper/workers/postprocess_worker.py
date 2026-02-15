@@ -482,7 +482,7 @@ class PostprocessWorker:
             folder = "images" if media_type == "output" else media_type
 
             # Construct new filename with request_id suffix
-            s3_key = f"media_raw/{user_id}/{folder}/{file_stem}_{request_suffix}{file_suffix}"
+            s3_key = f"media-raw/{user_id}/{folder}/{file_stem}_{request_suffix}{file_suffix}"
 
             logger.debug(f"Uploading {s3_key} to bucket {bucket_name}")
 
