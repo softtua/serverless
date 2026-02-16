@@ -819,7 +819,7 @@ async def invocations(
     try:
         async with cancel_on_disconnect(request, request_id):
             # Poll for result completion with timeout
-            max_wait_time = 300  # 5 minutes timeout
+            max_wait_time = 600  # 10 minutes timeout
             start_time = time.time()
             poll_interval = 0.5
 

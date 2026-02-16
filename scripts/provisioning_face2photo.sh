@@ -16,16 +16,17 @@ NODES=(
 )
 
 # Model declarations: "URL|OUTPUT_PATH"
-HF_MODELS=(
-  "https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI/resolve/main/split_files/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors
-  |$MODELS_DIR/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors"
-  "https://huggingface.co/unsloth/Qwen-Image-Edit-2511-GGUF/resolve/main/qwen-image-edit-2511-Q4_K_M.gguf
-  |$MODELS_DIR/diffusion_models/qwen-image-edit-2511-Q4_K_M.gguf"
-  "https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI/resolve/main/split_files/vae/qwen_image_vae.safetensors
-  |$MODELS_DIR/vae/qwen_image_vae.safetensors"
-  "https://huggingface.co/lightx2v/Qwen-Image-Edit-2511-Lightning/resolve/main/Qwen-Image-Edit-2511-Lightning-8steps-V1.0-bf16.safetensors
-  |$MODELS_DIR/loras/Qwen-Image-Edit-2511-Lightning-8steps-V1.0-bf16.safetensors"
-)
+#HF_MODELS=(
+#  "https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI/resolve/main/split_files/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors
+#  |$MODELS_DIR/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors"
+#  "https://huggingface.co/unsloth/Qwen-Image-Edit-2511-GGUF/resolve/main/qwen-image-edit-2511-Q4_K_M.gguf
+#  |$MODELS_DIR/diffusion_models/qwen-image-edit-2511-Q4_K_M.gguf"
+#  "https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI/resolve/main/split_files/vae/qwen_image_vae.safetensors
+#  |$MODELS_DIR/vae/qwen_image_vae.safetensors"
+#  "https://huggingface.co/lightx2v/Qwen-Image-Edit-2511-Lightning/resolve/main/Qwen-Image-Edit-2511-Lightning-8steps-V1.0-bf16.safetensors
+#  |$MODELS_DIR/loras/Qwen-Image-Edit-2511-Lightning-8steps-V1.0-bf16.safetensors"
+#)
+HF_MODELS=()
 ### End Configuration ###
 
 script_cleanup() {
@@ -75,7 +76,7 @@ main() {
         pids+=($!)
     done
 
-    rclone copy -Pv s3:photobooth-models/loras/ "$MODELS_DIR/loras/" --s3-chunk-size=100M --transfers=10
+    #rclone copy -Pv s3:photobooth-models/loras/ "$MODELS_DIR/loras/" --s3-chunk-size=100M --transfers=10
 
     # Wait for each job and check exit status
     for pid in "${pids[@]}"; do
