@@ -52,7 +52,7 @@ install_custom_nodes() {
             printf "Downloading node: %s...\n" "${repo}"
             git clone "${repo}" "${path}" --recursive
             if [[ -e $requirements ]]; then
-                pip install --python /venv/main/bin/python --no-cache-dir -r "${requirements}"
+                pip install /venv/main/bin/python --no-cache-dir -r "${requirements}"
             fi
         fi
     done
