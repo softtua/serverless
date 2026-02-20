@@ -56,6 +56,9 @@ HF_MODELS=(
   "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/diffusion_models/wan2.2_t2v_low_noise_14B_fp8_scaled.safetensors
   |$MODELS_DIR/diffusion_models/wan2.2_t2v_low_noise_14B_fp8_scaled.safetensors"
 )
+
+#Use custom models from R2 cloud storage instead of HuggingFace for faster provisioning.
+HF_MODELS=()
 ### End Configuration ###
 
 script_cleanup() {
@@ -113,12 +116,13 @@ main() {
         pids+=($!)
     done
 
-    rclone copy -Pv r2:video-models/models/vae/ "$MODELS_DIR/vae/" --s3-chunk-size=100M --transfers=10
-    rclone copy -Pv r2:video-models/models/loras/ "$MODELS_DIR/loras/" --s3-chunk-size=100M --transfers=10
+    rclone copy -Pv r2:video-models/models/ "$MODELS_DIR/" --s3-chunk-size=100M --transfers=10
     rclone copy -Pv r2:video-models/fonts/ "${WORKSPACE_DIR}/ComfyUI/custom_nodes/ComfyUI-FFmpeg/fonts/"
-    rclone copy -Pv r2:video-models/models/mmaudio/ "$MODELS_DIR/mmaudio/" --s3-chunk-size=100M --transfers=10
-    rclone copy -Pv r2:video-models/models/detection/ "$MODELS_DIR/detection/" --s3-chunk-size=100M --transfers=10
-    rclone copy -Pv r2:video-models/models/clip_vision/ "$MODELS_DIR/clip_vision/" --s3-chunk-size=100M --transfers=10
+    #rclone copy -Pv r2:video-models/models/vae/ "$MODELS_DIR/vae/" --s3-chunk-size=100M --transfers=10
+    #rclone copy -Pv r2:video-models/models/loras/ "$MODELS_DIR/loras/" --s3-chunk-size=100M --transfers=10
+    #rclone copy -Pv r2:video-models/models/mmaudio/ "$MODELS_DIR/mmaudio/" --s3-chunk-size=100M --transfers=10
+    #rclone copy -Pv r2:video-models/models/detection/ "$MODELS_DIR/detection/" --s3-chunk-size=100M --transfers=10
+    #rclone copy -Pv r2:video-models/models/clip_vision/ "$MODELS_DIR/clip_vision/" --s3-chunk-size=100M --transfers=10
 
     # Wait for each job and check exit status
     for pid in "${pids[@]}"; do
