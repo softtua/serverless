@@ -33,6 +33,9 @@ NODES=(
     "https://github.com/Fannovel16/comfyui_controlnet_aux"
     "https://github.com/melMass/comfy_mtb"
     "https://github.com/kijai/ComfyUI-WanAnimatePreprocess.git"
+    "https://github.com/Lightricks/ComfyUI-LTXVideo.git"
+    "https://github.com/ltdrdata/ComfyUI-Impact-Pack.git"
+    "https://github.com/ClownsharkBatwing/RES4LYF.git"
 )
 
 # Model declarations: "URL|OUTPUT_PATH"
@@ -93,6 +96,10 @@ install_custom_nodes() {
     rm -rf "${WORKSPACE_DIR}/ComfyUI/custom_nodes/ComfyUI-Manager"
 }
 
+install_hf_repos() {
+  hf download google/gemma-3-12b-it-qat-q4_0-unquantized --local-dir "${MODELS_DIR}/text_encoders"
+}
+
 install_sageattention() {
     pip install --no-cache-dir packaging
     git clone https://github.com/thu-ml/SageAttention.git "${WORKSPACE_DIR}/sageattention"
@@ -120,6 +127,9 @@ main() {
     rclone copy -Pv r2:video-models/fonts/ "${WORKSPACE_DIR}/ComfyUI/custom_nodes/ComfyUI-FFmpeg/fonts/"
     rclone copy -Pv r2:video-models/rife47.pth "${WORKSPACE_DIR}/ComfyUI/custom_nodes/ComfyUI-Frame-Interpolation/ckpts/rife/"
     rm "${WORKSPACE_DIR}/ComfyUI/extra_model_paths.yaml"
+
+    install_hf_repos
+
     #rclone copy -Pv r2:video-models/models/vae/ "$MODELS_DIR/vae/" --s3-chunk-size=100M --transfers=10
     #rclone copy -Pv r2:video-models/models/loras/ "$MODELS_DIR/loras/" --s3-chunk-size=100M --transfers=10
     #rclone copy -Pv r2:video-models/models/mmaudio/ "$MODELS_DIR/mmaudio/" --s3-chunk-size=100M --transfers=10
