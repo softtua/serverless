@@ -772,11 +772,11 @@ async def ping(response: Response):
     try:
         # Check if ComfyUI is accessible
         timeout = aiohttp.ClientTimeout(total=5)
-        #async with aiohttp.ClientSession(timeout=timeout) as session:
-        #    async with session.get(COMFYUI_API_SYSTEM_STATS) as stats_response:
-        #        if stats_response.status != 200:
-        #            response.status_code = 503  # Service Unavailable
-        #            return {"status": "unhealthy", "message": "ComfyUI is not accessible"}
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(COMFYUI_API_SYSTEM_STATS) as stats_response:
+                if stats_response.status != 200:
+                    response.status_code = 503  # Service Unavailable
+                    return {"status": "unhealthy", "message": "ComfyUI is not accessible"}
 
         # Container is ready
         response.status_code = 200
