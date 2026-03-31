@@ -19,6 +19,11 @@ COMFYUI_API_QUEUE = urljoin(COMFYUI_API_BASE, '/queue')
 COMFYUI_API_HISTORY = urljoin(COMFYUI_API_BASE, '/history')
 COMFYUI_API_INTERRUPT = urljoin(COMFYUI_API_BASE, '/api/interrupt')
 COMFYUI_API_SYSTEM_STATS = urljoin(COMFYUI_API_BASE, '/system_stats')
+COMFYUI_API_FREE = urljoin(COMFYUI_API_BASE, '/free')
+
+# Ollama configuration
+OLLAMA_API_BASE = os.getenv('OLLAMA_API_BASE', 'http://127.0.0.1:11434')
+OLLAMA_API_GENERATE = urljoin(OLLAMA_API_BASE, '/api/generate')
 
 # WebSocket endpoint (convert http to ws, https to wss)
 COMFYUI_API_WEBSOCKET = COMFYUI_API_BASE.replace('http://', 'ws://').replace('https://', 'wss://') + '/ws'

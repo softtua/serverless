@@ -32,10 +32,10 @@ NODES=(
     "https://github.com/rgthree/rgthree-comfy"
     "https://github.com/Fannovel16/comfyui_controlnet_aux"
     "https://github.com/melMass/comfy_mtb"
-    "https://github.com/kijai/ComfyUI-WanAnimatePreprocess.git"
-    "https://github.com/Lightricks/ComfyUI-LTXVideo.git"
-    "https://github.com/ltdrdata/ComfyUI-Impact-Pack.git"
-    "https://github.com/ClownsharkBatwing/RES4LYF.git"
+    "https://github.com/kijai/ComfyUI-WanAnimatePreprocess"
+    "https://github.com/Lightricks/ComfyUI-LTXVideo"
+    "https://github.com/ltdrdata/ComfyUI-Impact-Pack"
+    "https://github.com/ClownsharkBatwing/RES4LYF"
 )
 
 # Model declarations: "URL|OUTPUT_PATH"
@@ -61,7 +61,16 @@ HF_MODELS=(
 )
 
 #Use custom models from R2 cloud storage instead of HuggingFace for faster provisioning.
-HF_MODELS=()
+HF_MODELS=(
+  "https://huggingface.co/Lightricks/LTX-2.3/resolve/main/ltx-2.3-22b-dev.safetensors
+  |$MODELS_DIR/checkpoints/ltx-2.3-22b-dev.safetensors"
+  "https://huggingface.co/Lightricks/LTX-2.3/resolve/main/ltx-2.3-22b-distilled-lora-384.safetensors
+  |$MODELS_DIR/loras/ltx-2.3-22b-distilled-lora-384.safetensors"
+  "https://huggingface.co/Lightricks/LTX-2.3/resolve/main/ltx-2.3-spatial-upscaler-x2-1.0.safetensors
+  |$MODELS_DIR/latent_upscale_models/ltx-2.3-spatial-upscaler-x2-1.0.safetensors"
+  "https://huggingface.co/Comfy-Org/ltx-2/resolve/main/split_files/text_encoders/gemma_3_12B_it_fp4_mixed.safetensors
+  |$MODELS_DIR/text_encoders/gemma_3_12B_it_fp4_mixed.safetensors"
+)
 ### End Configuration ###
 
 script_cleanup() {

@@ -18,7 +18,7 @@ import time
 import aiofiles
 
 import aiohttp
-from config import CACHE_TYPE, WORKER_CONFIG, DEBUG_ENABLED, CACHE_TTL, COMFYUI_API_SYSTEM_STATS
+from config import CACHE_TYPE, WORKER_CONFIG, DEBUG_ENABLED, CACHE_TTL, COMFYUI_API_SYSTEM_STATS, COMFYUI_API_QUEUE, COMFYUI_API_FREE, OLLAMA_API_GENERATE
 from requestmodels.models import Payload
 from responses.result import Result
 from workers.preprocess_worker import PreprocessWorker
@@ -725,6 +725,69 @@ async def queue_info():
         "postprocess_queue_size": postprocess_queue.qsize(),
     }
 
+
+@app.post('/llm/generate')
+async def llm_generate(request: Request, response: Response):
+    """Forward a request to Ollama /api/generate, but only when ComfyUI GPU is idle."""
+
+    body = await request.json()
+
+    # 1. Check whether ComfyUI has any running or pending jobs
+    try:
+        timeout = aiohttp.ClientTimeout(total=5)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(COMFYUI_API_QUEUE) as queue_resp:
+                if queue_resp.status != 200:
+                    response.status_code = 502
+                    return {"error": "Failed to query ComfyUI queue", "message": f"Status {queue_resp.status}"}
+                queue_data = await queue_resp.json()
+    except Exception as e:
+        logger.error(f"llm_generate: failed to reach ComfyUI queue: {e}")
+        response.status_code = 502
+        return {"error": "Failed to reach ComfyUI", "message": str(e)}
+
+    running = queue_data.get("queue_running", [])
+    pending = queue_data.get("queue_pending", [])
+    if running or pending:
+        response.status_code = 503
+        return {
+            "error": "GPU is busy",
+            "message": f"ComfyUI is currently processing jobs "
+                       f"({len(running)} running, {len(pending)} pending). "
+                       "Please try again later."
+        }
+
+    # 2. Force-free GPU memory so Ollama can use it
+    try:
+        free_payload = json.dumps({"free_memory": True, "unload_models": True})
+        timeout = aiohttp.ClientTimeout(total=10)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(
+                COMFYUI_API_FREE,
+                data=free_payload,
+                headers={"Content-Type": "application/json"},
+            ) as free_resp:
+                logger.info(f"llm_generate: ComfyUI /free responded with {free_resp.status}")
+    except Exception as e:
+        # Non-fatal – log and continue
+        logger.warning(f"llm_generate: could not free ComfyUI GPU memory: {e}")
+
+    # 3. Forward the request body to Ollama and return the response as-is
+    try:
+        timeout = aiohttp.ClientTimeout(total=300)  # 5-minute timeout for LLM inference
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(
+                OLLAMA_API_GENERATE,
+                json=body,
+                headers={"Content-Type": "application/json"},
+            ) as ollama_resp:
+                ollama_data = await ollama_resp.json(content_type=None)
+                response.status_code = ollama_resp.status
+                return ollama_data
+    except Exception as e:
+        logger.error(f"llm_generate: failed to reach Ollama: {e}")
+        response.status_code = 502
+        return {"error": "Failed to reach Ollama", "message": str(e)}
 
 @app.get('/health', response_model=dict)
 async def health(response: Response):

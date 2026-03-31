@@ -11,6 +11,9 @@ from .config import (
     COMFYUI_API_INTERRUPT,
     COMFYUI_API_WEBSOCKET,
     COMFYUI_API_SYSTEM_STATS,
+    COMFYUI_API_FREE,
+    OLLAMA_API_BASE,
+    OLLAMA_API_GENERATE,
 
     # Cache Configuration
     CACHE_TYPE,
