@@ -9,3 +9,7 @@ python-magic
 uvicorn[standard]>=0.24.0
 markdown
 python-dotenv>=1.0.0
+qwen_agent
+numpy
+soundfile
+trafilatura

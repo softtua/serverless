@@ -18,7 +18,13 @@ import time
 import aiofiles
 
 import aiohttp
-from config import CACHE_TYPE, WORKER_CONFIG, DEBUG_ENABLED, CACHE_TTL, COMFYUI_API_SYSTEM_STATS, COMFYUI_API_QUEUE, COMFYUI_API_FREE, OLLAMA_API_GENERATE
+import concurrent.futures
+
+from config import (
+    CACHE_TYPE, WORKER_CONFIG, DEBUG_ENABLED, CACHE_TTL,
+    COMFYUI_API_SYSTEM_STATS, COMFYUI_API_QUEUE, COMFYUI_API_FREE,
+    OLLAMA_API_GENERATE, OLLAMA_API_BASE,
+)
 from requestmodels.models import Payload
 from responses.result import Result
 from workers.preprocess_worker import PreprocessWorker
@@ -726,20 +732,86 @@ async def queue_info():
     }
 
 
+def _run_llm_agent(
+    model: str,
+    system_message: str,
+    user_prompt: str,
+    temperature: float = 0.7,
+    top_p: float | None = None,
+) -> str:
+    """
+    Run qwen_agent Assistant (synchronous) in a thread-pool executor.
+    Returns the final text response from the LLM.
+    """
+    from qwen_agent.agents import Assistant
+    from tools.fetch_url import FetchURLTool
+
+    generate_cfg: dict = {'temperature': temperature}
+    if top_p is not None:
+        generate_cfg['top_p'] = top_p
+
+    llm_cfg = {
+        'model': model,
+        # Ollama exposes an OpenAI-compatible /v1 endpoint
+        'model_server': OLLAMA_API_BASE.rstrip('/') + '/v1',
+        'api_key': 'ollama',
+        'generate_cfg': generate_cfg,
+    }
+
+    agent = Assistant(
+        llm=llm_cfg,
+        system_message=system_message,
+        function_list=[FetchURLTool()],
+    )
+
+    messages = [{'role': 'user', 'content': user_prompt}]
+    final_response = ''
+    for message in agent.run(messages=messages):
+        # agent.run yields lists of messages; grab the last assistant message
+        if isinstance(message, list):
+            for msg in message:
+                if isinstance(msg, dict) and msg.get('role') == 'assistant':
+                    content = msg.get('content', '')
+                    if isinstance(content, list):
+                        # Multimodal content — join text parts
+                        content = ''.join(
+                            c.get('text', '') for c in content if isinstance(c, dict)
+                        )
+                    if content:
+                        final_response = content
+
+    return final_response
+
+
 @app.post('/llm/generate')
 async def llm_generate(request: Request, response: Response):
-    """Forward a request to Ollama /api/generate, but only when ComfyUI GPU is idle."""
+    """
+    Agentic LLM endpoint backed by Ollama + qwen_agent.
+
+    The agent can autonomously call the `fetch_url` tool when it needs to read
+    a webpage, or answer directly without using any tools.
+
+    The endpoint is guarded: it refuses when ComfyUI is actively using the GPU
+    and frees GPU VRAM before handing control to Ollama.
+
+    Request body (same shape as Ollama /api/generate):
+        model   – Ollama model tag  (default: qwen3:14b)
+        system  – system prompt
+        prompt  – user message
+        stream  – must be false (streaming not supported on this endpoint)
+    """
 
     body = await request.json()
 
-    # 1. Check whether ComfyUI has any running or pending jobs
+    # ── 1. Guard: check ComfyUI queue ────────────────────────────────────────
     try:
         timeout = aiohttp.ClientTimeout(total=5)
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.get(COMFYUI_API_QUEUE) as queue_resp:
                 if queue_resp.status != 200:
                     response.status_code = 502
-                    return {"error": "Failed to query ComfyUI queue", "message": f"Status {queue_resp.status}"}
+                    return {"error": "Failed to query ComfyUI queue",
+                            "message": f"Status {queue_resp.status}"}
                 queue_data = await queue_resp.json()
     except Exception as e:
         logger.error(f"llm_generate: failed to reach ComfyUI queue: {e}")
@@ -752,14 +824,16 @@ async def llm_generate(request: Request, response: Response):
         response.status_code = 503
         return {
             "error": "GPU is busy",
-            "message": f"ComfyUI is currently processing jobs "
-                       f"({len(running)} running, {len(pending)} pending). "
-                       "Please try again later."
+            "message": (
+                f"ComfyUI is currently processing jobs "
+                f"({len(running)} running, {len(pending)} pending). "
+                "Please try again later."
+            ),
         }
 
-    # 2. Force-free GPU memory so Ollama can use it
+    # ── 2. Free GPU VRAM so Ollama can load the model ────────────────────────
     try:
-        free_payload = json.dumps({"free_memory": True, "unload_models": True})
+        free_payload = json.dumps({"free_memory": True, "unload_models": False})
         timeout = aiohttp.ClientTimeout(total=10)
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.post(
@@ -768,26 +842,46 @@ async def llm_generate(request: Request, response: Response):
                 headers={"Content-Type": "application/json"},
             ) as free_resp:
                 logger.info(f"llm_generate: ComfyUI /free responded with {free_resp.status}")
+        # Give ComfyUI a moment to actually release the memory
+        await asyncio.sleep(3)
     except Exception as e:
-        # Non-fatal – log and continue
         logger.warning(f"llm_generate: could not free ComfyUI GPU memory: {e}")
 
-    # 3. Forward the request body to Ollama and return the response as-is
+    # ── 3. Run the agentic LLM in a thread (qwen_agent is synchronous) ───────
+    model = body.get('model', 'qwen3:14b')
+    system_message = body.get('system', '')
+    user_prompt = body.get('prompt', '')
+    options = body.get('options', {}) or {}
+    temperature = float(options.get('temperature', 0.7))
+    top_p = float(options['top_p']) if 'top_p' in options else None
+
+    if not user_prompt:
+        response.status_code = 400
+        return {"error": "Missing required field", "message": "'prompt' is required"}
+
     try:
-        timeout = aiohttp.ClientTimeout(total=300)  # 5-minute timeout for LLM inference
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.post(
-                OLLAMA_API_GENERATE,
-                json=body,
-                headers={"Content-Type": "application/json"},
-            ) as ollama_resp:
-                ollama_data = await ollama_resp.json(content_type=None)
-                response.status_code = ollama_resp.status
-                return ollama_data
+        loop = asyncio.get_event_loop()
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            final_text = await loop.run_in_executor(
+                pool,
+                _run_llm_agent,
+                model,
+                system_message,
+                user_prompt,
+                temperature,
+                top_p,
+            )
+
+        return {
+            "model": model,
+            "response": final_text,
+            "done": True,
+        }
+
     except Exception as e:
-        logger.error(f"llm_generate: failed to reach Ollama: {e}")
+        logger.error(f"llm_generate: agent error: {e}")
         response.status_code = 502
-        return {"error": "Failed to reach Ollama", "message": str(e)}
+        return {"error": "Agent execution failed", "message": str(e)}
 
 @app.get('/health', response_model=dict)
 async def health(response: Response):
