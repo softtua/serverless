@@ -2,7 +2,7 @@ import asyncio
 import uuid
 import logging
 import json
-from typing import Annotated, List
+from typing import Annotated, List, TypedDict, Optional
 from datetime import datetime
 from pathlib import Path
 
@@ -30,6 +30,7 @@ from responses.result import Result
 from workers.preprocess_worker import PreprocessWorker
 from workers.generation_worker import GenerationWorker
 from workers.postprocess_worker import PostprocessWorker
+from gpu_arbiter import arbiter
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG if DEBUG_ENABLED else logging.INFO)
@@ -78,12 +79,26 @@ postprocess_queue = asyncio.Queue()
 # Semaphore to ensure only one request is in generation at a time
 generation_lock = asyncio.Semaphore(1)
 
+# ── LLM async job infrastructure ─────────────────────────────────────────────
+
+class LlmJob(TypedDict):
+    job_id: str
+    status: str          # queued | waiting_for_gpu | processing | completed | failed
+    result: Optional[str]
+    error: Optional[str]
+    callback_url: Optional[str]
+    model: str
+
+llm_job_store: dict[str, LlmJob] = {}
+llm_job_queue: asyncio.Queue = asyncio.Queue()
+
 
 @app.on_event("startup")
 async def startup_event():
     """Initialize workers on startup"""
     try:
         asyncio.create_task(main())
+        asyncio.create_task(_llm_async_worker())
         logger.info("Workers initialized successfully")
     except Exception as e:
         logger.error(f"Failed to initialize workers: {e}")
@@ -729,6 +744,214 @@ async def queue_info():
         "preprocess_queue_size": preprocess_queue.qsize(),
         "generation_queue_size": generation_queue.qsize(),
         "postprocess_queue_size": postprocess_queue.qsize(),
+    }
+
+
+# ── LLM helpers ───────────────────────────────────────────────────────────────
+
+async def _unload_ollama_model(model: str) -> None:
+    """
+    Evict `model` from Ollama VRAM by sending keep_alive=0.
+    Non-fatal — logs warning on failure.
+    """
+    try:
+        timeout = aiohttp.ClientTimeout(total=10)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(
+                OLLAMA_API_GENERATE,
+                json={"model": model, "keep_alive": 0},
+                headers={"Content-Type": "application/json"},
+            ) as resp:
+                logger.info(f"_unload_ollama_model: {model} unloaded (status {resp.status})")
+    except Exception as e:
+        logger.warning(f"_unload_ollama_model: could not unload {model}: {e}")
+
+
+async def _send_callback(url: str, job_id: str, status: str, result: Optional[str]) -> None:
+    """POST job result to callback_url. Non-fatal — logs warning on failure."""
+    try:
+        timeout = aiohttp.ClientTimeout(total=15)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(
+                url,
+                json={"job_id": job_id, "status": status, "result": result},
+                headers={"Content-Type": "application/json"},
+            ) as resp:
+                logger.info(f"_send_callback: {url} responded {resp.status} for job {job_id}")
+    except Exception as e:
+        logger.warning(f"_send_callback: callback to {url} failed for job {job_id}: {e}")
+
+
+async def _llm_async_worker() -> None:
+    """
+    Background worker that drains llm_job_queue sequentially.
+
+    For each job:
+      1. Set status → waiting_for_gpu
+      2. Acquire GPU via arbiter.llm_turn() (waits for ComfyUI to finish)
+      3. Free ComfyUI VRAM, wait 3 s
+      4. Run _run_llm_agent in a thread
+      5. Unload Ollama model from VRAM (before releasing GPU)
+      6. Set status → completed / failed
+      7. Fire callback if requested
+    """
+    logger.info("LLM async worker started")
+    while True:
+        job: LlmJob = await llm_job_queue.get()
+        job_id = job["job_id"]
+
+        try:
+            # Signal caller that we're waiting for GPU
+            llm_job_store[job_id]["status"] = "waiting_for_gpu"
+            logger.info(f"LLM async worker: job {job_id} waiting for GPU")
+
+            async with arbiter.llm_turn():
+                # ── Free ComfyUI VRAM before loading Ollama model ──────────
+                try:
+                    free_payload = json.dumps({"free_memory": True, "unload_models": False})
+                    timeout = aiohttp.ClientTimeout(total=10)
+                    async with aiohttp.ClientSession(timeout=timeout) as session:
+                        async with session.post(
+                            COMFYUI_API_FREE,
+                            data=free_payload,
+                            headers={"Content-Type": "application/json"},
+                        ) as free_resp:
+                            logger.info(f"LLM async worker: ComfyUI /free responded {free_resp.status}")
+                    await asyncio.sleep(3)
+                except Exception as e:
+                    logger.warning(f"LLM async worker: could not free ComfyUI GPU memory: {e}")
+
+                # ── Run inference ───────────────────────────────────────────
+                llm_job_store[job_id]["status"] = "processing"
+                logger.info(f"LLM async worker: job {job_id} processing")
+
+                model = job["model"]
+                try:
+                    loop = asyncio.get_event_loop()
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                        final_text = await loop.run_in_executor(
+                            pool,
+                            _run_llm_agent,
+                            model,
+                            job.get("system_message", ""),
+                            job.get("user_prompt", ""),
+                            job.get("temperature", 0.7),
+                            job.get("top_p"),
+                        )
+                    llm_job_store[job_id]["status"] = "completed"
+                    llm_job_store[job_id]["result"] = final_text
+                    logger.info(f"LLM async worker: job {job_id} completed")
+                except Exception as e:
+                    llm_job_store[job_id]["status"] = "failed"
+                    llm_job_store[job_id]["error"] = str(e)
+                    logger.error(f"LLM async worker: job {job_id} failed: {e}")
+
+                # ── Evict model from VRAM before releasing GPU to ComfyUI ──
+                await _unload_ollama_model(model)
+
+        except Exception as e:
+            logger.error(f"LLM async worker: unexpected error for job {job_id}: {e}")
+            llm_job_store[job_id]["status"] = "failed"
+            llm_job_store[job_id]["error"] = str(e)
+        finally:
+            llm_job_queue.task_done()
+
+        # ── Fire webhook callback ───────────────────────────────────────────
+        job_record = llm_job_store.get(job_id, {})
+        if callback_url := job_record.get("callback_url"):
+            asyncio.create_task(
+                _send_callback(
+                    callback_url,
+                    job_id,
+                    job_record.get("status", "failed"),
+                    job_record.get("result"),
+                )
+            )
+
+        # ── Evict completed/failed jobs older than 2 hours ─────────────────
+        cutoff = time.time() - 7200  # 2 hours
+        expired = [
+            jid for jid, j in llm_job_store.items()
+            if j.get("status") in ("completed", "failed")
+            and j.get("created_at", 0) < cutoff
+        ]
+        for jid in expired:
+            del llm_job_store[jid]
+        if expired:
+            logger.info(f"LLM async worker: evicted {len(expired)} expired job(s) from store")
+
+
+# ── LLM async endpoints ───────────────────────────────────────────────────────
+
+@app.post('/llm/generate/async', status_code=202)
+async def llm_generate_async(request: Request, response: Response):
+    """
+    Async agentic LLM endpoint.
+
+    Immediately returns a job_id (HTTP 202).  The job is processed in the
+    background; use GET /llm/result/{job_id} to poll for the result.
+
+    Request body fields (same as /llm/generate plus optional callback_url):
+        model        – Ollama model tag         (default: qwen3:14b)
+        system       – system prompt
+        prompt       – user message             (required)
+        stream       – must be false
+        options      – generation options (temperature, top_p)
+        callback_url – optional webhook URL; POSTed when job completes
+    """
+    body = await request.json()
+
+    user_prompt = body.get("prompt", "")
+    if not user_prompt:
+        response.status_code = 400
+        return {"error": "Missing required field", "message": "'prompt' is required"}
+
+    model = body.get("model", "qwen3:14b")
+    options = body.get("options", {}) or {}
+    temperature = float(options.get("temperature", 0.7))
+    top_p = float(options["top_p"]) if "top_p" in options else None
+
+    job_id = str(uuid.uuid4())
+    job: LlmJob = {
+        "job_id": job_id,
+        "status": "queued",
+        "result": None,
+        "error": None,
+        "callback_url": body.get("callback_url"),
+        "model": model,
+        # Extra fields for the worker (not part of TypedDict but stored alongside)
+        "system_message": body.get("system", ""),
+        "user_prompt": user_prompt,
+        "temperature": temperature,
+        "top_p": top_p,
+        "created_at": time.time(),
+    }
+    llm_job_store[job_id] = job
+    await llm_job_queue.put(job)
+
+    logger.info(f"llm_generate_async: queued job {job_id}")
+    response.status_code = 202
+    return {"job_id": job_id, "status": "queued"}
+
+
+@app.get('/llm/result/{job_id}')
+async def llm_result(job_id: str, response: Response):
+    """
+    Poll the status and result of an async LLM job.
+
+    Returns 404 if the job_id is unknown.
+    Statuses: queued | waiting_for_gpu | processing | completed | failed
+    """
+    job = llm_job_store.get(job_id)
+    if job is None:
+        response.status_code = 404
+        return {"error": "Job not found", "message": f"No job with id '{job_id}'"}
+
+    return {
+        "job_id": job_id,
+        "status": job["status"],
+        "result": job.get("result"),
+        "error": job.get("error"),
     }
 
 

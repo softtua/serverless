@@ -7,6 +7,7 @@ from typing import Optional, Dict, Any
 from datetime import datetime
 
 from config import COMFYUI_API_PROMPT, COMFYUI_API_HISTORY, COMFYUI_API_INTERRUPT, COMFYUI_API_WEBSOCKET
+from gpu_arbiter import arbiter
 
 logger = logging.getLogger(__name__)
 
@@ -57,42 +58,44 @@ class GenerationWorker:
                     await self.postprocess_queue.put(request_id)
                     self.generation_queue.task_done()
                     continue
-                    
-                # Submit workflow to ComfyUI
-                comfyui_job_id = await self.post_workflow(request)
-                logger.info(f"Submitted job {request_id} to ComfyUI as {comfyui_job_id}")
-                
-                # Update status to show generation started
-                result.status = "generating"
-                result.message = f"Generation started (ComfyUI job: {comfyui_job_id})"
-                await self.response_store.set(request_id, result)
 
-                # Check if job is already complete (cached result)
-                is_cached = await self.check_if_cached(comfyui_job_id)
-                
-                if is_cached:
-                    logger.info(f"Job {comfyui_job_id} completed immediately (cached result)")
-                    execution_result = {
-                        "prompt_id": comfyui_job_id,
-                        "nodes_executed": [],
-                        "progress_updates": [],
-                        "completed": True,
-                        "cached": True,
-                        "error": None
-                    }
-                else:
-                    # Wait for completion using WebSocket
-                    execution_result = await self.wait_for_completion_websocket(
-                        comfyui_job_id, 
-                        request_id
-                    )
-                
-                # Get the final result from ComfyUI history
-                comfyui_response = await self.get_result(comfyui_job_id)
-                logger.info(f"Retrieved ComfyUI result for {request_id}")
-                logger.debug(f"ComfyUI response structure: {json.dumps(comfyui_response, indent=2)[:500]}...")  # First 500 chars
-                
-                # Update result with success
+                # Acquire GPU — waits if LLM inference is active
+                async with arbiter.comfyui_turn():
+                    # Submit workflow to ComfyUI
+                    comfyui_job_id = await self.post_workflow(request)
+                    logger.info(f"Submitted job {request_id} to ComfyUI as {comfyui_job_id}")
+                    
+                    # Update status to show generation started
+                    result.status = "generating"
+                    result.message = f"Generation started (ComfyUI job: {comfyui_job_id})"
+                    await self.response_store.set(request_id, result)
+
+                    # Check if job is already complete (cached result)
+                    is_cached = await self.check_if_cached(comfyui_job_id)
+                    
+                    if is_cached:
+                        logger.info(f"Job {comfyui_job_id} completed immediately (cached result)")
+                        execution_result = {
+                            "prompt_id": comfyui_job_id,
+                            "nodes_executed": [],
+                            "progress_updates": [],
+                            "completed": True,
+                            "cached": True,
+                            "error": None
+                        }
+                    else:
+                        # Wait for completion using WebSocket
+                        execution_result = await self.wait_for_completion_websocket(
+                            comfyui_job_id, 
+                            request_id
+                        )
+                    
+                    # Get the final result from ComfyUI history
+                    comfyui_response = await self.get_result(comfyui_job_id)
+                    logger.info(f"Retrieved ComfyUI result for {request_id}")
+                    logger.debug(f"ComfyUI response structure: {json.dumps(comfyui_response, indent=2)[:500]}...")  # First 500 chars
+
+                # GPU released — update result and forward to post-processing
                 result.status = "generated"
                 result.message = "Generation complete. Queued for post-processing."
                 result.comfyui_response = comfyui_response
