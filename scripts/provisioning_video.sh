@@ -3,7 +3,7 @@
 #set -euo pipefail
 
 ### Configuration ###
-WORKSPACE_DIR="/opt"
+WORKSPACE_DIR="/workspace"
 MODELS_DIR="${WORKSPACE_DIR}/ComfyUI/models"
 HF_SEMAPHORE_DIR="/workspace/hf_download_sem_$$"
 HF_MAX_PARALLEL=3
