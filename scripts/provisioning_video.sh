@@ -3,7 +3,7 @@
 #set -euo pipefail
 
 ### Configuration ###
-WORKSPACE_DIR="/workspace"
+WORKSPACE_DIR="/opt"
 MODELS_DIR="${WORKSPACE_DIR}/ComfyUI/models"
 HF_SEMAPHORE_DIR="/workspace/hf_download_sem_$$"
 HF_MAX_PARALLEL=3
@@ -131,7 +131,7 @@ main() {
         download_hf_file "$url" "$output_path" &
         pids+=($!)
     done
-
+download_hf_file
     rclone copy -Pv r2:video-models/models/ "$MODELS_DIR/" --s3-chunk-size=100M --transfers=10
     rclone copy -Pv r2:video-models/fonts/ "${WORKSPACE_DIR}/ComfyUI/custom_nodes/ComfyUI-FFmpeg/fonts/"
     rclone copy -Pv r2:video-models/rife47.pth "${WORKSPACE_DIR}/ComfyUI/custom_nodes/ComfyUI-Frame-Interpolation/ckpts/rife/"
