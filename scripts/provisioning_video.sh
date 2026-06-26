@@ -131,13 +131,13 @@ main() {
         download_hf_file "$url" "$output_path" &
         pids+=($!)
     done
-download_hf_file
+
     rclone copy -Pv r2:video-models/models/ "$MODELS_DIR/" --s3-chunk-size=100M --transfers=10
     rclone copy -Pv r2:video-models/fonts/ "${WORKSPACE_DIR}/ComfyUI/custom_nodes/ComfyUI-FFmpeg/fonts/"
     rclone copy -Pv r2:video-models/rife47.pth "${WORKSPACE_DIR}/ComfyUI/custom_nodes/ComfyUI-Frame-Interpolation/ckpts/rife/"
     rm "${WORKSPACE_DIR}/ComfyUI/extra_model_paths.yaml"
 
-    install_hf_repos
+    #install_hf_repos
 
     #rclone copy -Pv r2:video-models/models/vae/ "$MODELS_DIR/vae/" --s3-chunk-size=100M --transfers=10
     #rclone copy -Pv r2:video-models/models/loras/ "$MODELS_DIR/loras/" --s3-chunk-size=100M --transfers=10
