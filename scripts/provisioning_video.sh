@@ -64,10 +64,10 @@ HF_MODELS=(
 HF_MODELS=(
   "https://huggingface.co/Lightricks/LTX-2.3/resolve/main/ltx-2.3-22b-dev.safetensors
   |$MODELS_DIR/checkpoints/ltx-2.3-22b-dev.safetensors"
-  "https://huggingface.co/Lightricks/LTX-2.3/resolve/main/ltx-2.3-22b-distilled-lora-384.safetensors
-  |$MODELS_DIR/loras/ltx-2.3-22b-distilled-lora-384.safetensors"
-  "https://huggingface.co/Lightricks/LTX-2.3/resolve/main/ltx-2.3-spatial-upscaler-x2-1.0.safetensors
-  |$MODELS_DIR/latent_upscale_models/ltx-2.3-spatial-upscaler-x2-1.0.safetensors"
+  "https://huggingface.co/Lightricks/LTX-2.3/resolve/main/ltx-2.3-22b-distilled-lora-384-1.1.safetensors
+  |$MODELS_DIR/loras/ltx-2.3-22b-distilled-lora-384-1.1.safetensors"
+  "https://huggingface.co/Lightricks/LTX-2.3/resolve/main/ltx-2.3-spatial-upscaler-x2-1.1.safetensors
+  |$MODELS_DIR/latent_upscale_models/ltx-2.3-spatial-upscaler-x2-1.1.safetensors"
   "https://huggingface.co/Comfy-Org/ltx-2/resolve/main/split_files/text_encoders/gemma_3_12B_it_fp4_mixed.safetensors
   |$MODELS_DIR/text_encoders/gemma_3_12B_it_fp4_mixed.safetensors"
 )
