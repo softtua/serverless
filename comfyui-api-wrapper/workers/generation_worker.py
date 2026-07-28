@@ -7,6 +7,7 @@ from typing import Optional, Dict, Any
 from datetime import datetime
 
 from config import COMFYUI_API_PROMPT, COMFYUI_API_HISTORY, COMFYUI_API_INTERRUPT, COMFYUI_API_WEBSOCKET
+from config import OLLAMA_API_PS, OLLAMA_API_GENERATE
 from gpu_arbiter import arbiter
 
 logger = logging.getLogger(__name__)
@@ -59,8 +60,13 @@ class GenerationWorker:
                     self.generation_queue.task_done()
                     continue
 
-                # Acquire GPU — waits if LLM inference is active
+                # Acquire GPU — waits if LLM inference is active (through our own API)
                 async with arbiter.comfyui_turn():
+                    # Also check Ollama directly — a client could be talking to
+                    # it outside of our wrapper (e.g. curl/CLI). ComfyUI always
+                    # has priority, so force-evict any resident model.
+                    await self._ensure_ollama_idle()
+
                     # Submit workflow to ComfyUI
                     comfyui_job_id = await self.post_workflow(request)
                     logger.info(f"Submitted job {request_id} to ComfyUI as {comfyui_job_id}")
@@ -132,6 +138,65 @@ class GenerationWorker:
                 self.generation_queue.task_done()
 
         logger.info(f"GenerationWorker {self.worker_id} finished")
+
+    async def _ensure_ollama_idle(self):
+        """
+        Check whether Ollama currently has any model resident in VRAM —
+        regardless of whether it was loaded via our /llm/generate endpoints
+        or by a client talking to Ollama directly (e.g. someone SSH-ed into
+        the server running `ollama run ...` or curling /api/generate).
+
+        ComfyUI generation always takes priority: if Ollama is not idle,
+        force-evict every loaded model (keep_alive=0) before proceeding.
+        Non-fatal — logs and continues on any failure.
+        """
+        try:
+            timeout = aiohttp.ClientTimeout(total=5)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(OLLAMA_API_PS) as resp:
+                    if resp.status != 200:
+                        return
+                    data = await resp.json()
+
+            models = data.get("models", []) if isinstance(data, dict) else []
+            if not models:
+                return  # Ollama is idle, nothing to do
+
+            model_names = [
+                m.get("name") or m.get("model")
+                for m in models
+                if m.get("name") or m.get("model")
+            ]
+            logger.info(
+                f"GenerationWorker {self.worker_id}: Ollama is busy ({model_names}) — "
+                f"forcing eviction so ComfyUI gets GPU priority"
+            )
+
+            evict_timeout = aiohttp.ClientTimeout(total=10)
+            async with aiohttp.ClientSession(timeout=evict_timeout) as session:
+                for model_name in model_names:
+                    try:
+                        async with session.post(
+                            OLLAMA_API_GENERATE,
+                            json={"model": model_name, "keep_alive": 0},
+                            headers={"Content-Type": "application/json"},
+                        ) as unload_resp:
+                            logger.info(
+                                f"GenerationWorker {self.worker_id}: evicted Ollama model "
+                                f"'{model_name}' (status {unload_resp.status})"
+                            )
+                    except Exception as e:
+                        logger.warning(
+                            f"GenerationWorker {self.worker_id}: failed to evict Ollama "
+                            f"model '{model_name}': {e}"
+                        )
+
+            # Give Ollama a moment to actually free VRAM before we proceed
+            await asyncio.sleep(2)
+
+        except Exception as e:
+            # Ollama might not be reachable/installed on this deployment — that's fine
+            logger.debug(f"GenerationWorker {self.worker_id}: could not check Ollama status: {e}")
 
     async def post_workflow(self, request) -> str:
         """Submit workflow to ComfyUI API"""

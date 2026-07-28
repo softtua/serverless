@@ -24,6 +24,9 @@ COMFYUI_API_FREE = urljoin(COMFYUI_API_BASE, '/free')
 # Ollama configuration
 OLLAMA_API_BASE = os.getenv('OLLAMA_API_BASE', 'http://127.0.0.1:11434')
 OLLAMA_API_GENERATE = urljoin(OLLAMA_API_BASE, '/api/generate')
+# /api/ps lists models currently resident in VRAM (loaded by ANY client,
+# including ones talking to Ollama directly, bypassing this wrapper)
+OLLAMA_API_PS = urljoin(OLLAMA_API_BASE, '/api/ps')
 
 # WebSocket endpoint (convert http to ws, https to wss)
 COMFYUI_API_WEBSOCKET = COMFYUI_API_BASE.replace('http://', 'ws://').replace('https://', 'wss://') + '/ws'

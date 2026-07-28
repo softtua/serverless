@@ -14,6 +14,7 @@ from .config import (
     COMFYUI_API_FREE,
     OLLAMA_API_BASE,
     OLLAMA_API_GENERATE,
+    OLLAMA_API_PS,
 
     # Cache Configuration
     CACHE_TYPE,
@@ -50,6 +51,9 @@ __all__ = [
     'COMFYUI_API_INTERRUPT',
     'COMFYUI_API_WEBSOCKET',
     'COMFYUI_API_SYSTEM_STATS',
+    'OLLAMA_API_BASE',
+    'OLLAMA_API_GENERATE',
+    'OLLAMA_API_PS',
     'CACHE_TYPE',
     'COMFYUI_INSTALL_DIR',
     'INPUT_DIR',
