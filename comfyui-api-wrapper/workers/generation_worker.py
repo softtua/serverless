@@ -7,6 +7,7 @@ from typing import Optional, Dict, Any
 from datetime import datetime
 
 from config import COMFYUI_API_PROMPT, COMFYUI_API_HISTORY, COMFYUI_API_INTERRUPT, COMFYUI_API_WEBSOCKET
+from config import COMFYUI_API_QUEUE, GENERATION_CONFIG
 from config import OLLAMA_API_PS, OLLAMA_API_GENERATE
 from gpu_arbiter import arbiter
 
@@ -27,7 +28,7 @@ class GenerationWorker:
         self.generation_lock = kwargs.get("generation_lock")  # Optional, for future use
 
         # Configuration
-        self.max_wait_time = 3600  # 1 hour maximum wait
+        self.max_wait_time = GENERATION_CONFIG["max_wait_time"]
         self.ws_url = COMFYUI_API_WEBSOCKET
         self.client_id = f"worker_{worker_id}_{datetime.now().timestamp()}"
 
@@ -273,6 +274,31 @@ class GenerationWorker:
             logger.debug(f"Error checking cache status: {e}")
             return False
     
+    async def is_job_running(self, comfyui_job_id: str) -> bool:
+        """
+        Ask ComfyUI whether the prompt is still executing or waiting in the queue.
+
+        This is the authoritative liveness signal: the WebSocket can stay silent for
+        a long time on nodes that report no progress (video merge, colour match,
+        h264 encode), and killing such a job wastes the whole generation.
+        """
+        timeout = aiohttp.ClientTimeout(total=10)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(COMFYUI_API_QUEUE) as response:
+                if response.status != 200:
+                    raise Exception(f"ComfyUI queue returned status {response.status}")
+                queue_data = await response.json()
+
+        for key in ("queue_running", "queue_pending"):
+            for entry in queue_data.get(key, []) or []:
+                # Entries look like [number, prompt_id, prompt, extra_data, outputs]
+                if isinstance(entry, (list, tuple)) and len(entry) > 1:
+                    if entry[1] == comfyui_job_id:
+                        return True
+                elif isinstance(entry, dict) and entry.get("prompt_id") == comfyui_job_id:
+                    return True
+        return False
+
     async def wait_for_completion_websocket(self, comfyui_job_id: str, request_id: str) -> Dict[str, Any]:
         """
         Wait for ComfyUI job completion using WebSocket connection
@@ -305,8 +331,14 @@ class GenerationWorker:
                     last_cancellation_check = start_time
                     
                     # Progressive timeout strategy
-                    initial_timeout = 30.0  # 30 seconds to receive first message
-                    message_timeout = 180.0  # 60 seconds between messages after first message received
+                    initial_timeout = GENERATION_CONFIG["initial_timeout"]
+                    # Silence between messages is normal: nodes like the time merge,
+                    # colour match and the h264 encode of a long 2K clip run for
+                    # minutes without any WebSocket traffic.
+                    message_timeout = GENERATION_CONFIG["message_timeout"]
+                    # How long we keep waiting while ComfyUI still reports the prompt
+                    # as running (measured from the last message we received).
+                    silent_running_timeout = GENERATION_CONFIG["silent_running_timeout"]
                     max_no_message_retries = 3  # Number of times to retry when no messages received
                     no_message_retry_count = 0
                     
@@ -463,6 +495,39 @@ class GenerationWorker:
                                 except Exception as check_error:
                                     logger.warning(f"Error checking job status after timeout: {check_error}")
                                 
+                                # Silence is not death: ask ComfyUI whether the prompt is
+                                # still executing. Long-running silent nodes (video merge,
+                                # colour match, h264 encode) legitimately produce no
+                                # WebSocket traffic for many minutes.
+                                silent_for = asyncio.get_event_loop().time() - last_message_time
+                                try:
+                                    still_running = await self.is_job_running(comfyui_job_id)
+                                except Exception as queue_error:
+                                    logger.warning(f"Error checking ComfyUI queue for {comfyui_job_id}: {queue_error}")
+                                    still_running = None
+
+                                if still_running and elapsed > self.max_wait_time:
+                                    logger.error(f"Job {comfyui_job_id} still running but exceeded "
+                                                f"max wait time ({elapsed:.1f}s) - giving up")
+                                    raise Exception(f"Timeout waiting for job {comfyui_job_id} "
+                                                f"after {elapsed:.1f} seconds")
+
+                                if still_running and silent_for < silent_running_timeout:
+                                    logger.info(f"Job {comfyui_job_id} is still running in ComfyUI "
+                                                f"(silent for {silent_for:.1f}s of {silent_running_timeout}s) "
+                                                f"- continuing to wait")
+                                    await self._update_progress(
+                                        request_id,
+                                        f"Still processing (no progress updates for {silent_for:.0f}s)"
+                                    )
+                                    continue
+
+                                if still_running:
+                                    logger.error(f"Job {comfyui_job_id} still running but silent for "
+                                                f"{silent_for:.1f}s - giving up")
+                                    raise Exception(f"Job {comfyui_job_id} stalled: no WebSocket messages "
+                                                f"for {silent_for:.1f} seconds while still running")
+
                                 # If still no completion after timeout, raise error
                                 raise Exception(f"WebSocket message timeout for job {comfyui_job_id} "
                                             f"after {timeout_duration} seconds without messages")

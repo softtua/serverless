@@ -35,6 +35,9 @@ from .config import (
     
     # Worker Configuration
     WORKER_CONFIG,
+
+    # Generation watchdog Configuration
+    GENERATION_CONFIG,
     
     # Redis Configuration
     REDIS_CONFIG,
@@ -63,6 +66,7 @@ __all__ = [
     'WEBHOOK_CONFIG',
     'WEBHOOK_ENABLED',
     'WORKER_CONFIG',
+    'GENERATION_CONFIG',
     'REDIS_CONFIG',
     'DEBUG_ENABLED'
 ]

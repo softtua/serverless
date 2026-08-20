@@ -31,6 +31,21 @@ OLLAMA_API_PS = urljoin(OLLAMA_API_BASE, '/api/ps')
 # WebSocket endpoint (convert http to ws, https to wss)
 COMFYUI_API_WEBSOCKET = COMFYUI_API_BASE.replace('http://', 'ws://').replace('https://', 'wss://') + '/ws'
 
+# Generation watchdog configuration
+# Long video jobs (2K upscale, merge + colour match + h264 encode) can run for
+# many minutes inside a single node without emitting any WebSocket message, so
+# silence alone must never be treated as a dead job — see GENERATION_CONFIG.
+GENERATION_CONFIG = {
+    # Hard ceiling for one ComfyUI job (seconds)
+    "max_wait_time": int(os.getenv("GENERATION_MAX_WAIT_TIME", "7200")),
+    # Seconds to wait for the very first WebSocket message
+    "initial_timeout": float(os.getenv("GENERATION_INITIAL_TIMEOUT", "30")),
+    # Seconds of WebSocket silence before we check whether the job is still alive
+    "message_timeout": float(os.getenv("GENERATION_MESSAGE_TIMEOUT", "600")),
+    # Seconds of silence tolerated while ComfyUI still reports the job as running
+    "silent_running_timeout": float(os.getenv("GENERATION_SILENT_RUNNING_TIMEOUT", "3600")),
+}
+
 # Cache configuration
 CACHE_TYPE = "redis" if os.getenv("API_CACHE", "").lower() == "redis" else "memory"
 CACHE_TTL = int(os.getenv("API_CACHE_TTL", 21600))  # 6 hours as default
