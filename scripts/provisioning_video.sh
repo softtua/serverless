@@ -105,6 +105,49 @@ install_custom_nodes() {
     rm -rf "${WORKSPACE_DIR}/ComfyUI/custom_nodes/ComfyUI-Manager"
 }
 
+patch_comfyui_ffmpeg_watermark() {
+    local node_file="${WORKSPACE_DIR}/ComfyUI/custom_nodes/ComfyUI-FFmpeg/nodes/addImgWatermark.py"
+
+    # Upstream AddImgWatermark lets the RGBA overlay promote H.264 output to
+    # yuv444p (High 4:4:4 Predictive), which browsers commonly cannot decode.
+    # Patch the freshly cloned third-party node to emit browser-compatible MP4.
+    python3 - "$node_file" <<'PY'
+from pathlib import Path
+import sys
+
+node_file = Path(sys.argv[1])
+source = node_file.read_text()
+
+marker = "                '-pix_fmt', 'yuv420p',\n"
+if marker in source:
+    print(f"Watermark compatibility patch already present: {node_file}")
+    raise SystemExit(0)
+
+needle = (
+    "                '-filter_complex',f\"[1:v]scale={watermark_img_width}:"
+    "{watermark_img_height}[wm];[0:v][wm]overlay=x={position_x}:"
+    "y={position_y}:format=auto\",\n"
+    "                output_path,\n"
+)
+replacement = (
+    needle.removesuffix("                output_path,\n")
+    + "                '-c:v', 'libx264',\n"
+    + marker
+    + "                '-c:a', 'copy',\n"
+    + "                '-movflags', '+faststart',\n"
+    + "                output_path,\n"
+)
+
+if source.count(needle) != 1:
+    raise RuntimeError(
+        f"Unexpected AddImgWatermark source in {node_file}; refusing to apply a stale patch"
+    )
+
+node_file.write_text(source.replace(needle, replacement))
+print(f"Patched AddImgWatermark for browser-compatible MP4: {node_file}")
+PY
+}
+
 install_hf_repos() {
   hf download google/gemma-3-12b-it-qat-q4_0-unquantized --local-dir "${MODELS_DIR}/text_encoders"
 }
@@ -123,6 +166,7 @@ main() {
     pids=()
 
     install_custom_nodes
+    patch_comfyui_ffmpeg_watermark
 
     # Download all models in parallel
     for model in "${HF_MODELS[@]}"; do
