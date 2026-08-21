@@ -36,6 +36,7 @@ NODES=(
     "https://github.com/Lightricks/ComfyUI-LTXVideo"
     "https://github.com/ltdrdata/ComfyUI-Impact-Pack"
     "https://github.com/ClownsharkBatwing/RES4LYF"
+    "https://github.com/Tr1dae/ComfyUI-MiniMaxH3_LatentUpscaler"
 )
 
 # Model declarations: "URL|OUTPUT_PATH"
@@ -178,10 +179,10 @@ main() {
 
     rclone copy -Pv r2:video-models/models/ "$MODELS_DIR/" --s3-chunk-size=100M --transfers=10
     rclone copy -Pv r2:video-models/fonts/ "${WORKSPACE_DIR}/ComfyUI/custom_nodes/ComfyUI-FFmpeg/fonts/"
-    # Watermark artwork for AddImgWatermark; the node takes an absolute path, so the
-    # file has to exist on every worker exactly where the Drupal graph points.
+    # Watermark artwork for AddImgWatermark; the node takes an absolute path
     rclone copy -Pv r2:video-models/watermark/ "${WORKSPACE_DIR}/ComfyUI/custom_nodes/ComfyUI-FFmpeg/watermark/"
     rclone copy -Pv r2:video-models/rife47.pth "${WORKSPACE_DIR}/ComfyUI/custom_nodes/ComfyUI-Frame-Interpolation/ckpts/rife/"
+    rclone copy -Pv r2:video-models/custom_nodes/ "${WORKSPACE_DIR}/ComfyUI/custom_nodes/"
     rm "${WORKSPACE_DIR}/ComfyUI/extra_model_paths.yaml"
 
     #install_hf_repos
