@@ -37,6 +37,7 @@ NODES=(
     "https://github.com/ltdrdata/ComfyUI-Impact-Pack"
     "https://github.com/ClownsharkBatwing/RES4LYF"
     "https://github.com/Tr1dae/ComfyUI-MiniMaxH3_LatentUpscaler"
+    "https://github.com/mamad8c/ComfyUI-H3-Latent-Upscaler-Mamad8"
 )
 
 # Model declarations: "URL|OUTPUT_PATH"
