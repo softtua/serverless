@@ -468,8 +468,62 @@ class GenerationWorker:
                                         return execution_result
                                 except Exception as check_error:
                                     logger.warning(f"Error checking job status: {check_error}")
+
+                                # The WebSocket may connect after ComfyUI has already
+                                # emitted execution_start/executing.  In that case the
+                                # prompt can legitimately be running while this client
+                                # has never received a single message.  History is empty
+                                # until completion, so the queue is the liveness signal.
+                                try:
+                                    still_running = await self.is_job_running(comfyui_job_id)
+                                except Exception as queue_error:
+                                    logger.warning(
+                                        f"Error checking ComfyUI queue for {comfyui_job_id}: "
+                                        f"{queue_error}"
+                                    )
+                                    still_running = None
+
+                                silent_for = asyncio.get_event_loop().time() - last_message_time
+                                if still_running and elapsed > self.max_wait_time:
+                                    logger.error(
+                                        f"Job {comfyui_job_id} still running but exceeded "
+                                        f"max wait time ({elapsed:.1f}s) - giving up"
+                                    )
+                                    raise Exception(
+                                        f"Timeout waiting for job {comfyui_job_id} "
+                                        f"after {elapsed:.1f} seconds"
+                                    )
+
+                                if still_running and silent_for < silent_running_timeout:
+                                    logger.info(
+                                        f"Job {comfyui_job_id} is still running in ComfyUI "
+                                        f"despite no WebSocket messages "
+                                        f"(silent for {silent_for:.1f}s of "
+                                        f"{silent_running_timeout}s) - continuing to wait"
+                                    )
+                                    await self._update_progress(
+                                        request_id,
+                                        f"Still processing (waiting for first progress update; "
+                                        f"{silent_for:.0f}s elapsed)"
+                                    )
+                                    # The three-attempt allowance is only for a prompt
+                                    # that cannot be found in either history or queue.
+                                    # A positively live prompt must not consume it.
+                                    no_message_retry_count = 0
+                                    continue
+
+                                if still_running:
+                                    logger.error(
+                                        f"Job {comfyui_job_id} still running but silent for "
+                                        f"{silent_for:.1f}s - giving up"
+                                    )
+                                    raise Exception(
+                                        f"Job {comfyui_job_id} stalled: no WebSocket messages "
+                                        f"for {silent_for:.1f} seconds while still running"
+                                    )
                                 
-                                # If we've exhausted retries, give up
+                                # If the prompt is absent from both history and queue,
+                                # retain the short retry window for submit/queue races.
                                 if no_message_retry_count >= max_no_message_retries:
                                     logger.error(f"No WebSocket messages received for {comfyui_job_id} "
                                             f"after {max_no_message_retries} attempts and {elapsed:.1f}s")
