@@ -13,3 +13,4 @@ qwen_agent
 numpy
 soundfile
 trafilatura
+tqdm
