@@ -31,6 +31,7 @@ from workers.preprocess_worker import PreprocessWorker
 from workers.generation_worker import GenerationWorker
 from workers.postprocess_worker import PostprocessWorker
 from gpu_arbiter import arbiter
+from video_chain_artifacts import router as video_chain_router
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG if DEBUG_ENABLED else logging.INFO)
@@ -42,6 +43,7 @@ app = FastAPI(
     version="1.0.0",
     redirect_slashes=False  # Disable automatic slash redirects
 )
+app.include_router(video_chain_router)
 
 # Add middleware to handle reverse proxy headers
 @app.middleware("http")
