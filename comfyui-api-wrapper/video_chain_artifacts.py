@@ -46,6 +46,10 @@ class ChainRequest(BaseModel):
     run_name: str
     scene: int = Field(gt=0)
     issued_at: int
+    # Confirmed scenes produced on another worker. A local copy of such a
+    # scene is only a leftover of an unconfirmed take, however consistent its
+    # own hashes are, so restore checks it against the bucket's canonical copy.
+    remote_scenes: list[int] = Field(default_factory=list)
 
 
 class ProbeRequest(BaseModel):
@@ -256,64 +260,126 @@ async def _download_object(client, bucket: str, key: str, destination: Path) -> 
         temporary.unlink(missing_ok=True)
 
 
+def _local_segment(run_root: Path, scene: int) -> dict[str, Any] | None:
+    try:
+        return _read_metadata(run_root, scene)[1]["segment"]
+    except (FileNotFoundError, ValueError, json.JSONDecodeError):
+        return None
+
+
+def _drop_hq_latents(run_root: Path, scene: int) -> None:
+    """Remove a scene's HQ latents, which carry no revision in their name.
+
+    HQ Context Splice reads `checkpoints_hq/clip_NNNN.safetensors` of the
+    predecessor by index alone. After a scene is replaced by another take the
+    old file would splice the wrong take into the next scene; a missing file
+    is bypassed cleanly by the splice node instead.
+    """
+    hq_dir = run_root / "checkpoints_hq"
+    for path in (hq_dir / f"clip_{scene:04d}.safetensors", *hq_dir.glob(f"clip_{scene:04d}_chunk_*.safetensors")):
+        path.unlink(missing_ok=True)
+
+
+async def _restore_scene_from_bucket(
+    client, bucket: str, prefix: str, run_root: Path, scene: int, include_checkpoint: bool,
+) -> tuple[list[str], bool]:
+    """Make one scene match its canonical bucket copy.
+
+    Returns the downloaded keys and whether the local take was replaced.
+    """
+    destination = _metadata_path(run_root, scene)
+    key = prefix + _relative_artifact(run_root, destination)
+    # Validate the canonical document before it replaces anything local.
+    incoming = destination.with_name(destination.name + f".remote-{uuid.uuid4().hex}")
+    try:
+        await _download_object(client, bucket, key, incoming)
+        metadata = json.loads(incoming.read_text(encoding="utf-8"))
+        segment = metadata.get("segment")
+        if not isinstance(segment, dict) or int(segment.get("index", -1)) != scene:
+            raise ValueError(f"Scene {scene} bucket metadata has an invalid segment record.")
+        if str(metadata.get("run_name") or "") != run_root.name:
+            raise ValueError(f"Scene {scene} bucket metadata belongs to another run.")
+        replaced = _local_segment(run_root, scene) != segment
+        os.replace(incoming, destination)
+    finally:
+        incoming.unlink(missing_ok=True)
+
+    restored = [key]
+    if replaced:
+        _drop_hq_latents(run_root, scene)
+    for field, hash_field in _ARTIFACT_FIELDS:
+        if field == "checkpoint" and not include_checkpoint:
+            continue
+        address = segment.get(field)
+        if not isinstance(address, str) or not address:
+            continue
+        path = _inside_run(run_root, address)
+        expected = str(segment.get(hash_field) or "") if hash_field else ""
+        if path.is_file() and (not expected or _sha256(path) == expected):
+            continue
+        key = prefix + _relative_artifact(run_root, path)
+        await _download_object(client, bucket, key, path)
+        if expected and _sha256(path) != expected:
+            path.unlink(missing_ok=True)
+            raise ValueError(f"Restored artifact failed SHA-256 verification: {key}")
+        restored.append(key)
+    return restored, replaced
+
+
 async def _restore_scene(payload: ChainRequest) -> dict[str, Any]:
     run_root = _run_root(payload.run_name)
     predecessor = payload.scene - 1
     if predecessor <= 0:
         return {"ready": True, "source": "initial", "restored": []}
+    remote_scenes = {scene for scene in payload.remote_scenes if 1 <= scene <= predecessor}
 
     # The normal case is same-worker continuation. Verify it locally and do
     # no bucket traffic if the predecessor pack is already complete.
-    try:
-        local_files: list[tuple[Path, str | None]] = []
-        for scene in range(1, predecessor + 1):
-            local_files.extend(_scene_files(run_root, scene, include_checkpoint=(scene == predecessor)))
-        _verify_local(local_files)
-        return {"ready": True, "source": "local", "restored": []}
-    except (FileNotFoundError, ValueError, json.JSONDecodeError):
-        pass
+    if not remote_scenes:
+        try:
+            local_files: list[tuple[Path, str | None]] = []
+            for scene in range(1, predecessor + 1):
+                local_files.extend(_scene_files(run_root, scene, include_checkpoint=(scene == predecessor)))
+            _verify_local(local_files)
+            return {"ready": True, "source": "local", "restored": []}
+        except (FileNotFoundError, ValueError, json.JSONDecodeError):
+            pass
 
     config = _s3_config()
     prefix = _remote_prefix(payload.user_id, payload.run_name)
     restored: list[str] = []
+    replaced_scenes: list[int] = []
     session = aiobotocore.session.get_session()
     async with session.create_client("s3", **_client_kwargs(config)) as client:
-        # Canonical metadata is the source of truth for revision filenames and
-        # hashes. Fetch it first, then restore exactly the files it references.
-        metadata_documents: list[tuple[int, Path, dict[str, Any]]] = []
         for scene in range(1, predecessor + 1):
-            destination = _metadata_path(run_root, scene)
-            key = prefix + _relative_artifact(run_root, destination)
-            await _download_object(client, config["bucket_name"], key, destination)
-            _path, metadata = _read_metadata(run_root, scene)
-            metadata_documents.append((scene, destination, metadata))
-            restored.append(key)
-
-        for scene, _metadata_path_value, metadata in metadata_documents:
-            segment = metadata["segment"]
-            for field, hash_field in _ARTIFACT_FIELDS:
-                if field == "checkpoint" and scene != predecessor:
+            include_checkpoint = scene == predecessor
+            # A scene confirmed on this worker is authoritative locally: its
+            # bucket mirror may still be uploading, and the bucket copy could
+            # be the previous take. Only fall back to the bucket if it is
+            # missing or damaged here.
+            if scene not in remote_scenes:
+                try:
+                    _verify_local(_scene_files(run_root, scene, include_checkpoint=include_checkpoint))
                     continue
-                address = segment.get(field)
-                if not isinstance(address, str) or not address:
-                    continue
-                destination = _inside_run(run_root, address)
-                expected = str(segment.get(hash_field) or "") if hash_field else ""
-                if destination.is_file() and (not expected or _sha256(destination) == expected):
-                    continue
-                key = prefix + _relative_artifact(run_root, destination)
-                await _download_object(client, config["bucket_name"], key, destination)
-                if expected and _sha256(destination) != expected:
-                    destination.unlink(missing_ok=True)
-                    raise ValueError(f"Restored artifact failed SHA-256 verification: {key}")
-                restored.append(key)
+                except (FileNotFoundError, ValueError, json.JSONDecodeError):
+                    pass
+            keys, replaced = await _restore_scene_from_bucket(
+                client, config["bucket_name"], prefix, run_root, scene, include_checkpoint)
+            restored.extend(keys)
+            if replaced:
+                replaced_scenes.append(scene)
 
     # Verify the complete selective-resume working set after all atomic moves.
     verified: list[tuple[Path, str | None]] = []
     for scene in range(1, predecessor + 1):
         verified.extend(_scene_files(run_root, scene, include_checkpoint=(scene == predecessor)))
     _verify_local(verified)
-    return {"ready": True, "source": "r2", "restored": restored}
+    return {
+        "ready": True,
+        "source": "r2" if restored else "local",
+        "restored": restored,
+        "replaced_scenes": replaced_scenes,
+    }
 
 
 @router.post("/upload", status_code=status.HTTP_202_ACCEPTED)
