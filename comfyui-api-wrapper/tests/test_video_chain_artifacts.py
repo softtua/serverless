@@ -131,6 +131,20 @@ class VideoChainArtifactTests(unittest.TestCase):
         })
         artifacts._verify_local(files)
 
+    def test_scene_files_include_the_audio_overlap_sidecar(self):
+        run_root = _fixture(self.root)
+        overlap = run_root / "generated_audio" / "clip_0001.rev.overlap.safetensors"
+        overlap.parent.mkdir(parents=True, exist_ok=True)
+        overlap.write_bytes(b"overlap")
+        canonical = run_root / "checkpoints" / "clip_0001.json"
+        document = json.loads(canonical.read_text())
+        document["segment"]["generated_audio_overlap"] = f"h3_chains/{RUN}/generated_audio/{overlap.name}"
+        document["segment"]["generated_audio_overlap_sha256"] = hashlib.sha256(b"overlap").hexdigest()
+        canonical.write_text(json.dumps(document))
+        files = artifacts._scene_files(run_root, 1, include_checkpoint=False)
+        self.assertIn(overlap, {path for path, _expected in files})
+        artifacts._verify_local(files)
+
     def test_scene_files_reject_tampered_checkpoint(self):
         run_root = _fixture(self.root)
         (run_root / "checkpoints" / "clip_0001.rev.safetensors").write_bytes(b"tampered")

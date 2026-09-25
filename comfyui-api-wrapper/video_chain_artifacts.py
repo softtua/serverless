@@ -33,8 +33,12 @@ _ARTIFACT_FIELDS = (
     ("segment", "segment_sha256"),
     ("checkpoint", "checkpoint_sha256"),
     ("generated_audio", "generated_audio_sha256"),
+    ("generated_audio_overlap", "generated_audio_overlap_sha256"),
     ("blend_segment", "blend_segment_sha256"),
     ("prompt_file", "prompt_file_sha256"),
+    # Compact audio overlap written by the LatentTiler resume patch; final
+    # assembly reads it instead of the (pruned) native checkpoint.
+    ("generated_audio_overlap", "generated_audio_overlap_sha256"),
     ("revision_metadata", None),
 )
 _operations: dict[str, dict[str, Any]] = {}
