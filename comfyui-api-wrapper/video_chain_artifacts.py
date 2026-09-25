@@ -204,6 +204,7 @@ async def _upload_scene(operation_id: str, payload: ChainRequest) -> None:
                 key = prefix + _relative_artifact(run_root, path)
                 await _upload_file(client, config["bucket_name"], key, path)
                 uploaded.append(key)
+            uploaded.extend(await _upload_hq_latent(client, config["bucket_name"], prefix, run_root, payload.scene))
 
             checkpoint_prefix = prefix + "checkpoints/"
             response = await client.list_objects_v2(Bucket=config["bucket_name"], Prefix=checkpoint_prefix)
@@ -220,6 +221,18 @@ async def _upload_scene(operation_id: str, payload: ChainRequest) -> None:
             if stale:
                 await client.delete_objects(
                     Bucket=config["bucket_name"], Delete={"Objects": stale, "Quiet": True})
+            # Same rotation for HQ latents: only the newest confirmed scene's
+            # latent is ever spliced into the next scene.
+            hq_prefix = prefix + "checkpoints_hq/"
+            response = await client.list_objects_v2(Bucket=config["bucket_name"], Prefix=hq_prefix)
+            stale_hq = [
+                {"Key": item["Key"]}
+                for item in response.get("Contents", [])
+                if str(item.get("Key")) not in uploaded
+            ]
+            if stale_hq:
+                await client.delete_objects(
+                    Bucket=config["bucket_name"], Delete={"Objects": stale_hq, "Quiet": True})
 
             # Written last, after every native artifact is durable and stale
             # checkpoint rotation succeeded. Drupal can use this tiny marker
@@ -278,6 +291,76 @@ def _drop_hq_latents(run_root: Path, scene: int) -> None:
     hq_dir = run_root / "checkpoints_hq"
     for path in (hq_dir / f"clip_{scene:04d}.safetensors", *hq_dir.glob(f"clip_{scene:04d}_chunk_*.safetensors")):
         path.unlink(missing_ok=True)
+
+
+def _hq_latent_path(run_root: Path, scene: int) -> Path:
+    return run_root / "checkpoints_hq" / f"clip_{scene:04d}.safetensors"
+
+
+def _hq_keys(prefix: str, scene: int) -> tuple[str, str]:
+    base = prefix + f"checkpoints_hq/clip_{scene:04d}"
+    return base + ".safetensors", base + ".json"
+
+
+async def _upload_hq_latent(client, bucket: str, prefix: str, run_root: Path, scene: int) -> list[str]:
+    """Mirror a confirmed scene's HQ latent, bound to its native checkpoint.
+
+    Only 2K chains write one. The file name has no revision, so the sidecar
+    records the checkpoint hash of the take it belongs to; restore uses that to
+    refuse a latent of another take.
+    """
+    path = _hq_latent_path(run_root, scene)
+    if not path.is_file():
+        return []
+    segment = _read_metadata(run_root, scene)[1]["segment"]
+    latent_key, sidecar_key = _hq_keys(prefix, scene)
+    await _upload_file(client, bucket, latent_key, path)
+    sidecar = json.dumps({
+        "scene": scene,
+        "sha256": _sha256(path),
+        "checkpoint_sha256": str(segment.get("checkpoint_sha256") or ""),
+    }, separators=(",", ":")).encode("utf-8")
+    await client.put_object(Bucket=bucket, Key=sidecar_key, Body=sidecar, ContentType="application/json")
+    return [latent_key, sidecar_key]
+
+
+async def _ensure_hq_latent(client, bucket: str, prefix: str, run_root: Path, scene: int, trust_local: bool) -> str:
+    """Give the predecessor the HQ latent of its confirmed take, or none.
+
+    HQ Context Splice reads it by index and bypasses cleanly when it is
+    missing, so this never fails a restore: a wrong latent is removed rather
+    than kept, and bucket problems only mean no splice for this boundary.
+    """
+    path = _hq_latent_path(run_root, scene)
+    if trust_local and path.is_file():
+        return "local"
+    latent_key, sidecar_key = _hq_keys(prefix, scene)
+    try:
+        response = await client.get_object(Bucket=bucket, Key=sidecar_key)
+        body = b""
+        async with response["Body"] as stream:
+            while chunk := await stream.read(64 * 1024):
+                body += chunk
+        sidecar = json.loads(body.decode("utf-8"))
+    except Exception:  # noqa: BLE001 - absent or unreadable sidecar: no HQ latent.
+        sidecar = None
+    canonical = str((_local_segment(run_root, scene) or {}).get("checkpoint_sha256") or "")
+    if not isinstance(sidecar, dict) or not canonical or sidecar.get("checkpoint_sha256") != canonical:
+        if not trust_local:
+            _drop_hq_latents(run_root, scene)
+        return "absent"
+    expected = str(sidecar.get("sha256") or "")
+    if path.is_file() and _sha256(path) == expected:
+        return "local"
+    try:
+        await _download_object(client, bucket, latent_key, path)
+    except Exception:  # noqa: BLE001 - bypass instead of failing the scene.
+        _drop_hq_latents(run_root, scene)
+        return "absent"
+    if _sha256(path) != expected:
+        _drop_hq_latents(run_root, scene)
+        return "absent"
+    return "restored"
 
 
 async def _restore_scene_from_bucket(
@@ -341,7 +424,22 @@ async def _restore_scene(payload: ChainRequest) -> dict[str, Any]:
             for scene in range(1, predecessor + 1):
                 local_files.extend(_scene_files(run_root, scene, include_checkpoint=(scene == predecessor)))
             _verify_local(local_files)
-            return {"ready": True, "source": "local", "restored": []}
+            if _hq_latent_path(run_root, predecessor).is_file():
+                return {"ready": True, "source": "local", "restored": [], "hq": "local"}
+            # Native pack is local but its HQ latent is not (the scene was
+            # restored here before HQ latents were mirrored): fetch it if the
+            # bucket has one for this take.
+            hq = "absent"
+            try:
+                config = _s3_config()
+                session = aiobotocore.session.get_session()
+                async with session.create_client("s3", **_client_kwargs(config)) as client:
+                    hq = await _ensure_hq_latent(
+                        client, config["bucket_name"], _remote_prefix(payload.user_id, payload.run_name),
+                        run_root, predecessor, trust_local=True)
+            except Exception:  # noqa: BLE001 - the splice bypasses a missing latent.
+                pass
+            return {"ready": True, "source": "local", "restored": [], "hq": hq}
         except (FileNotFoundError, ValueError, json.JSONDecodeError):
             pass
 
@@ -349,6 +447,7 @@ async def _restore_scene(payload: ChainRequest) -> dict[str, Any]:
     prefix = _remote_prefix(payload.user_id, payload.run_name)
     restored: list[str] = []
     replaced_scenes: list[int] = []
+    from_bucket: set[int] = set()
     session = aiobotocore.session.get_session()
     async with session.create_client("s3", **_client_kwargs(config)) as client:
         for scene in range(1, predecessor + 1):
@@ -366,8 +465,13 @@ async def _restore_scene(payload: ChainRequest) -> dict[str, Any]:
             keys, replaced = await _restore_scene_from_bucket(
                 client, config["bucket_name"], prefix, run_root, scene, include_checkpoint)
             restored.extend(keys)
+            from_bucket.add(scene)
             if replaced:
                 replaced_scenes.append(scene)
+        # Only the predecessor's HQ latent is ever spliced (by index).
+        hq = await _ensure_hq_latent(
+            client, config["bucket_name"], prefix, run_root, predecessor,
+            trust_local=predecessor not in from_bucket)
 
     # Verify the complete selective-resume working set after all atomic moves.
     verified: list[tuple[Path, str | None]] = []
@@ -379,6 +483,7 @@ async def _restore_scene(payload: ChainRequest) -> dict[str, Any]:
         "source": "r2" if restored else "local",
         "restored": restored,
         "replaced_scenes": replaced_scenes,
+        "hq": hq,
     }
 
 

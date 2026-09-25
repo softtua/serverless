@@ -74,12 +74,36 @@ class _Bucket:
         self.downloads.append(Key)
         return {"Body": _Body(self.objects[Key])}
 
+    async def put_object(self, Bucket: str, Key: str, Body, ContentType: str = ""):  # noqa: N803
+        self.objects[Key] = Body if isinstance(Body, bytes) else Body.read()
+
+    async def list_objects_v2(self, Bucket: str, Prefix: str):  # noqa: N803
+        return {"Contents": [{"Key": key} for key in self.objects if key.startswith(Prefix)]}
+
+    async def delete_objects(self, Bucket: str, Delete: dict):  # noqa: N803
+        for item in Delete["Objects"]:
+            self.objects.pop(item["Key"], None)
+
+
+PREFIX = f"9/video-chains/{RUN}/artifacts/"
+
 
 def _bucket_with(run: str, rev: str, user_id: int = 9) -> _Bucket:
     files, metadata = _take(run, rev)
     files["checkpoints/clip_0001.json"] = metadata
     prefix = f"{user_id}/video-chains/{run}/artifacts/"
     return _Bucket({prefix + relative: body for relative, body in files.items()})
+
+
+def _with_hq(bucket: _Bucket, rev: str, latent: bytes = b"hq-latent") -> _Bucket:
+    """Add a mirrored HQ latent bound to take `rev` of scene 1."""
+    bucket.objects[PREFIX + "checkpoints_hq/clip_0001.safetensors"] = latent
+    bucket.objects[PREFIX + "checkpoints_hq/clip_0001.json"] = json.dumps({
+        "scene": 1,
+        "sha256": hashlib.sha256(latent).hexdigest(),
+        "checkpoint_sha256": hashlib.sha256(b"checkpoint-" + rev.encode()).hexdigest(),
+    }).encode()
+    return bucket
 
 
 class VideoChainArtifactTests(unittest.TestCase):
@@ -164,15 +188,69 @@ class VideoChainArtifactTests(unittest.TestCase):
         self.assertEqual(list((run_root / "checkpoints").glob("*.remote-*")), [])
 
     def test_restore_keeps_matching_take_from_other_worker(self):
-        # This worker already holds the confirmed take (e.g. restored earlier).
+        # This worker already holds the confirmed take and its HQ latent
+        # (e.g. restored earlier): only the two small documents are fetched.
         run_root = _fixture(self.root, rev="confirmed")
         hq = self._hq(run_root)
-        bucket = _bucket_with(RUN, "confirmed")
+        bucket = _with_hq(_bucket_with(RUN, "confirmed"), "confirmed", latent=b"hq")
         result = self._restore(bucket, [1])
 
         self.assertEqual(result["replaced_scenes"], [])
-        self.assertEqual(bucket.downloads, [f"9/video-chains/{RUN}/artifacts/checkpoints/clip_0001.json"])
+        self.assertEqual(result["hq"], "local")
+        self.assertEqual(bucket.downloads, [
+            PREFIX + "checkpoints/clip_0001.json", PREFIX + "checkpoints_hq/clip_0001.json"])
         self.assertTrue(all(path.exists() for path in hq))
+
+    def test_restore_fetches_the_hq_latent_of_the_confirmed_take(self):
+        run_root = _fixture(self.root, rev="unconfirmed")
+        self._hq(run_root)
+        bucket = _with_hq(_bucket_with(RUN, "confirmed"), "confirmed")
+        result = self._restore(bucket, [1])
+
+        self.assertEqual(result["hq"], "restored")
+        self.assertEqual((run_root / "checkpoints_hq" / "clip_0001.safetensors").read_bytes(), b"hq-latent")
+
+    def test_restore_refuses_an_hq_latent_of_another_take(self):
+        run_root = _fixture(self.root, rev="unconfirmed")
+        hq = self._hq(run_root)
+        bucket = _with_hq(_bucket_with(RUN, "confirmed"), "some-older-take")
+        result = self._restore(bucket, [1])
+
+        self.assertEqual(result["hq"], "absent")
+        self.assertFalse(any(path.exists() for path in hq))
+
+    def test_local_resume_fetches_a_missing_hq_latent(self):
+        # Scene 1 is valid locally but was restored here before HQ latents
+        # were mirrored, so the splice file is missing.
+        run_root = _fixture(self.root, rev="confirmed")
+        bucket = _with_hq(_bucket_with(RUN, "confirmed"), "confirmed")
+        result = self._restore(bucket, [])
+
+        self.assertEqual((result["source"], result["hq"]), ("local", "restored"))
+        self.assertTrue((run_root / "checkpoints_hq" / "clip_0001.safetensors").is_file())
+
+    def test_upload_mirrors_the_hq_latent_and_rotates_older_ones(self):
+        run_root = _fixture(self.root, rev="confirmed")
+        (run_root / "checkpoints_hq").mkdir()
+        (run_root / "checkpoints_hq" / "clip_0001.safetensors").write_bytes(b"hq-latent")
+        bucket = _Bucket({PREFIX + "checkpoints_hq/clip_0007.safetensors": b"old",
+                          PREFIX + "checkpoints_hq/clip_0007.json": b"{}"})
+        session = unittest.mock.MagicMock()
+        session.create_client.return_value = bucket
+        artifacts._operations["op"] = {"id": "op"}
+        payload = artifacts.ChainRequest(user_id=9, run_name=RUN, scene=1, issued_at=0)
+        with patch.object(artifacts, "_s3_config", return_value={
+            "access_key_id": "a", "secret_access_key": "s", "endpoint_url": "e",
+            "bucket_name": "b", "region": "auto",
+        }), patch.object(artifacts.aiobotocore.session, "get_session", return_value=session):
+            asyncio.run(artifacts._upload_scene("op", payload))
+
+        self.assertEqual(artifacts._operations["op"]["status"], "completed", artifacts._operations["op"])
+        hq_keys = sorted(key for key in bucket.objects if "/checkpoints_hq/" in key)
+        self.assertEqual(hq_keys, [PREFIX + "checkpoints_hq/clip_0001.json",
+                                   PREFIX + "checkpoints_hq/clip_0001.safetensors"])
+        sidecar = json.loads(bucket.objects[PREFIX + "checkpoints_hq/clip_0001.json"])
+        self.assertEqual(sidecar["checkpoint_sha256"], hashlib.sha256(b"checkpoint-confirmed").hexdigest())
 
     def test_restore_rejects_foreign_bucket_metadata(self):
         run_root = _fixture(self.root, rev="unconfirmed")
