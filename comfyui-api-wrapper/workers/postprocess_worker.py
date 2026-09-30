@@ -182,6 +182,12 @@ class PostprocessWorker:
             processed_files = []
             # Temporary storage for metadata that might come before the video
             pending_metadata = {}
+            # Every eligible file counted here, and every failure recorded, so a
+            # total wipeout (e.g. disk full) can be told apart from "nothing to
+            # process" below and reported with the real reason instead of a
+            # silent "Processed 0 output files".
+            candidate_count = 0
+            file_errors = []
             for node_id, node_outputs in outputs.items():
                 if not isinstance(node_outputs, dict):
                     logger.debug(f"Skipping non-dict node output: {node_id}")
@@ -204,13 +210,18 @@ class PostprocessWorker:
                                 continue
                             
                             # Process this output file
-                            processed = await self._process_output_file(
-                                item, 
-                                job_output_dir, 
-                                request_id,
-                                node_id,
-                                output_type
-                            )
+                            candidate_count += 1
+                            try:
+                                processed = await self._process_output_file(
+                                    item,
+                                    job_output_dir,
+                                    request_id,
+                                    node_id,
+                                    output_type
+                                )
+                            except Exception as file_error:
+                                file_errors.append(str(file_error))
+                                processed = None
                             if processed:
                                 # If this is a video output and we have pending metadata, add it
                                 processed_type = processed.get("type")
@@ -220,13 +231,18 @@ class PostprocessWorker:
                         # Handle text output type (file paths)
                         if isinstance(item, str) and item.startswith("/opt/ComfyUI/output"):
                             # Process string output as a file path
-                            processed = await self._process_output_file_from_text_node(
-                                item,
-                                job_output_dir,
-                                request_id,
-                                node_id,
-                                output_type
-                            )
+                            candidate_count += 1
+                            try:
+                                processed = await self._process_output_file_from_text_node(
+                                    item,
+                                    job_output_dir,
+                                    request_id,
+                                    node_id,
+                                    output_type
+                                )
+                            except Exception as file_error:
+                                file_errors.append(str(file_error))
+                                processed = None
                             if processed:
                                 # If this is a video output and we have pending metadata, add it
                                 processed_type = processed.get("type")
@@ -254,7 +270,17 @@ class PostprocessWorker:
             # Add all processed files to the result
             result.output = processed_files
             logger.info(f"Processed {len(processed_files)} output files for {request_id}")
-            
+
+            # There were files to move and every single one failed: this is a
+            # real failure (e.g. disk full), not an empty-but-valid job. Raise
+            # so work() marks the job failed with the actual reason instead of
+            # silently reporting success with an empty output — see the
+            # 2026-09-30 VIDEO 1 full-disk incident, where this stayed a
+            # generic "success: true, output: []" all the way to Drupal.
+            if candidate_count > 0 and not processed_files:
+                reason = "; ".join(dict.fromkeys(file_errors)) if file_errors else "unknown reason"
+                raise Exception(f"All {candidate_count} output file(s) failed to process: {reason}")
+
         except Exception as e:
             logger.error(f"Error moving assets for {request_id}: {e}", exc_info=True)
             raise
@@ -327,7 +353,10 @@ class PostprocessWorker:
             
         except Exception as e:
             logger.error(f"Error processing output file {item}: {e}", exc_info=True)
-            return None
+            # Re-raised so move_assets() can tell a real failure (disk full,
+            # permissions) apart from "nothing to do" and report the reason
+            # instead of a silent empty output.
+            raise
 
     async def _process_output_file_from_text_node(self, filePath: str, job_output_dir: Path, request_id: str, node_id: str, output_type: str) -> Optional[Dict]:
         try:
@@ -375,7 +404,9 @@ class PostprocessWorker:
 
         except Exception as e:
             logger.error(f"Error processing output file from text node {filePath}: {e}", exc_info=True)
-            return None
+            # See _process_output_file(): re-raised so a real failure surfaces
+            # instead of a silent empty output.
+            raise
 
     async def _copy_file_async(self, src: Path, dst: Path) -> None:
         """Async file copy"""
