@@ -38,6 +38,10 @@ NODES=(
     "https://github.com/ClownsharkBatwing/RES4LYF"
     "https://github.com/Tr1dae/ComfyUI-MiniMaxH3_LatentUpscaler"
     "https://github.com/mamad8c/ComfyUI-H3-Latent-Upscaler-Mamad8"
+    "https://github.com/ethanfel/ComfyUI-H3-Qwen3VL-TextGen"
+    "https://github.com/ethanfel/ComfyUI-MiniMaxH3-Contex-Loop"
+    "https://github.com/matlowai/ComfyUI-MAINodes"
+    "https://github.com/LBH-123-AI/Comfyui_Minimax_h3_latent_Upscaler"
 )
 
 # Model declarations: "URL|OUTPUT_PATH"
@@ -181,7 +185,7 @@ main() {
     rclone copy -Pv r2:video-models/models/ "$MODELS_DIR/" --s3-chunk-size=100M --transfers=10
     rclone copy -Pv r2:video-models/fonts/ "${WORKSPACE_DIR}/ComfyUI/custom_nodes/ComfyUI-FFmpeg/fonts/"
     # Watermark artwork for AddImgWatermark; the node takes an absolute path
-    rclone copy -Pv r2:video-models/watermark/ "${WORKSPACE_DIR}/ComfyUI/custom_nodes/ComfyUI-FFmpeg/watermark/"
+    rclone copy -Pv r2:video-models/watermark/ "${WORKSPACE_DIR}/ComfyUI/custom_nodes/watermark/"
     rclone copy -Pv r2:video-models/rife47.pth "${WORKSPACE_DIR}/ComfyUI/custom_nodes/ComfyUI-Frame-Interpolation/ckpts/rife/"
     rclone copy -Pv r2:video-models/custom_nodes/ "${WORKSPACE_DIR}/ComfyUI/custom_nodes/"
     rm "${WORKSPACE_DIR}/ComfyUI/extra_model_paths.yaml"
