@@ -229,7 +229,9 @@ class PostprocessWorker:
                                     processed.update(pending_metadata)
                                 processed_files.append(processed)
                         # Handle text output type (file paths)
-                        if isinstance(item, str) and item.startswith("/opt/ComfyUI/output"):
+                        # Compare resolved paths: on bare installs /opt/ComfyUI is a symlink and
+                        # nodes may report the real path (/root/autodl-tmp/video/ComfyUI/output/...).
+                        if isinstance(item, str) and self._is_output_path(item):
                             # Process string output as a file path
                             candidate_count += 1
                             try:
@@ -357,6 +359,16 @@ class PostprocessWorker:
             # permissions) apart from "nothing to do" and report the reason
             # instead of a silent empty output.
             raise
+
+    def _is_output_path(self, file_path: str) -> bool:
+        if file_path.startswith("/opt/ComfyUI/output"):
+            return True
+        try:
+            resolved = os.path.realpath(file_path)
+            return any(resolved.startswith(os.path.realpath(root) + os.sep)
+                       for root in ("/opt/ComfyUI/output", str(self.output_dir)))
+        except (OSError, ValueError):
+            return False
 
     async def _process_output_file_from_text_node(self, filePath: str, job_output_dir: Path, request_id: str, node_id: str, output_type: str) -> Optional[Dict]:
         try:
