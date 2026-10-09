@@ -567,3 +567,160 @@ async def restore_for_scene(
         return await _restore_scene(payload)
     except Exception as exc:  # noqa: BLE001 - turn storage failures into a safe gate.
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+# --- Scene takes --------------------------------------------------------------
+#
+# Every take of a scene keeps its own native checkpoint revision, but the HQ
+# latent the next 2K scene splices against is one file per scene index and is
+# overwritten by the next take. Drupal therefore asks for a snapshot of the
+# current take right before it dispatches a regeneration, and asks to activate
+# a take when the user confirms one that is not the newest.
+
+_REVISION_RE = re.compile(r"^[a-f0-9]{8,64}$")
+
+
+class TakeRequest(BaseModel):
+    run_name: str
+    scene: int = Field(gt=0)
+    issued_at: int
+    revision: str = ""
+
+
+def _hq_take_path(run_root: Path, scene: int, revision: str) -> Path:
+    # Not matched by the scene file name, the chunk glob or the upload: these
+    # copies never leave the worker and never reach the splice by accident.
+    return run_root / "checkpoints_hq" / f"clip_{scene:04d}.take-{revision}.safetensors"
+
+
+def _copy_atomic(source: Path, destination: Path) -> None:
+    temporary = destination.with_name(destination.name + f".part-{uuid.uuid4().hex}")
+    try:
+        with source.open("rb") as src, temporary.open("wb") as dst:
+            while chunk := src.read(8 * 1024 * 1024):
+                dst.write(chunk)
+        os.replace(temporary, destination)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _snapshot_take(run_root: Path, scene: int) -> dict[str, Any]:
+    segment = _read_metadata(run_root, scene)[1]["segment"]
+    revision = str(segment.get("revision") or "").lower()
+    if not _REVISION_RE.fullmatch(revision):
+        raise ValueError(f"Scene {scene} has no active revision.")
+    source = _hq_latent_path(run_root, scene)
+    hq = "absent"
+    if source.is_file():
+        _copy_atomic(source, _hq_take_path(run_root, scene, revision))
+        hq = "saved"
+    return {"revision": revision, "hq": hq,
+            "checkpoint_sha256": str(segment.get("checkpoint_sha256") or "")}
+
+
+def _revision_metadata(run_root: Path, scene: int, revision: str) -> dict[str, Any]:
+    path = run_root / "checkpoints" / f"clip_{scene:04d}.{revision}.json"
+    if not path.is_file():
+        raise FileNotFoundError(f"Scene {scene} revision {revision[:8]} is not on this worker.")
+    metadata = json.loads(path.read_text(encoding="utf-8"))
+    segment = metadata.get("segment")
+    if not isinstance(segment, dict) or int(segment.get("index", -1)) != scene \
+            or str(segment.get("revision") or "").lower() != revision:
+        raise ValueError(f"Scene {scene} revision {revision[:8]} metadata is invalid.")
+    return metadata
+
+
+async def _comfy_activate(body: dict[str, Any]) -> None:
+    """Repoint the Context Loop pack's active revision through its own API."""
+    import aiohttp
+    from config import COMFYUI_API_BASE
+
+    url = COMFYUI_API_BASE.rstrip("/") + "/minimax_h3_context_loop/checkpoint-revisions/restore"
+    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=60)) as session:
+        async with session.post(url, json=body) as response:
+            result = await response.json(content_type=None)
+            if response.status != 200 or not result.get("ok"):
+                raise ValueError(str(result.get("error") or f"Checkpoint activation failed ({response.status})."))
+
+
+async def _activate_take(run_name: str, scene: int, revision: str) -> dict[str, Any]:
+    run_root = _run_root(run_name)
+    metadata = _revision_metadata(run_root, scene, revision)
+    # The take's own files (checkpoint included) must be complete before it
+    # becomes the predecessor.
+    segment = metadata["segment"]
+    files = [(_inside_run(run_root, str(segment[field])), (str(segment.get(hash_field) or "") or None) if hash_field else None)
+             for field, hash_field in _ARTIFACT_FIELDS
+             if isinstance(segment.get(field), str) and segment.get(field)]
+    _verify_local(files)
+
+    current = _local_segment(run_root, scene) or {}
+    if str(current.get("revision") or "").lower() != revision:
+        selections = []
+        for earlier in range(1, scene):
+            earlier_segment = _local_segment(run_root, earlier) or {}
+            earlier_revision = str(earlier_segment.get("revision") or "").lower()
+            if not earlier_revision:
+                raise ValueError(f"Scene {earlier} has no active revision on this worker.")
+            selections.append({"scene": earlier, "revision": earlier_revision})
+        selections.append({"scene": scene, "revision": revision})
+        body = {
+            "run_name": run_name,
+            "activate_only": True,
+            "scope_start_scene": 1,
+            "scope_end_scene": scene,
+            "resume_scene": scene + 1,
+            "revisions": selections,
+        }
+        await _comfy_activate(body)
+        active = str((_local_segment(run_root, scene) or {}).get("revision") or "").lower()
+        if active != revision:
+            raise ValueError(f"Scene {scene} revision {revision[:8]} did not become active.")
+
+    # The scene-level HQ latent must belong to the activated take, or be absent
+    # (the splice bypasses a missing latent; a wrong one would join two takes).
+    hq_dir = run_root / "checkpoints_hq"
+    take_hq = _hq_take_path(run_root, scene, revision)
+    scene_hq = _hq_latent_path(run_root, scene)
+    for chunk in hq_dir.glob(f"clip_{scene:04d}_chunk_*.safetensors"):
+        chunk.unlink(missing_ok=True)
+    if take_hq.is_file():
+        _copy_atomic(take_hq, scene_hq)
+        hq = "restored"
+    elif str(current.get("revision") or "").lower() == revision and scene_hq.is_file():
+        hq = "local"
+    else:
+        scene_hq.unlink(missing_ok=True)
+        hq = "absent"
+    return {"revision": revision, "hq": hq}
+
+
+@router.post("/snapshot-take")
+async def snapshot_take(
+    request: Request,
+    x_proxima_chain_signature: str | None = Header(default=None),
+):
+    body = await _authorize(request, x_proxima_chain_signature)
+    payload = TakeRequest.model_validate_json(body)
+    _validate_request(payload.run_name, payload.issued_at)
+    try:
+        return _snapshot_take(_run_root(payload.run_name), payload.scene)
+    except (FileNotFoundError, ValueError, json.JSONDecodeError, OSError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/activate-take")
+async def activate_take(
+    request: Request,
+    x_proxima_chain_signature: str | None = Header(default=None),
+):
+    body = await _authorize(request, x_proxima_chain_signature)
+    payload = TakeRequest.model_validate_json(body)
+    _validate_request(payload.run_name, payload.issued_at)
+    revision = payload.revision.lower()
+    if not _REVISION_RE.fullmatch(revision):
+        raise HTTPException(status_code=422, detail="Invalid take revision.")
+    try:
+        return await _activate_take(payload.run_name, payload.scene, revision)
+    except (FileNotFoundError, ValueError, json.JSONDecodeError, OSError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc

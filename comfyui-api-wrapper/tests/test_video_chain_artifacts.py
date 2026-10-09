@@ -278,5 +278,104 @@ class VideoChainArtifactTests(unittest.TestCase):
         self.assertTrue(segment["checkpoint"].endswith("clip_0001.unconfirmed.safetensors"))
 
 
+REV_A = "aaaaaaaa1111"
+REV_B = "bbbbbbbb2222"
+
+
+def _write_take(run_root: Path, rev: str, active: bool) -> None:
+    files, metadata = _take(run_root.name, rev)
+    document = json.loads(metadata)
+    document["segment"]["revision"] = rev
+    files[f"checkpoints/clip_0001.{rev}.json"] = json.dumps(document).encode()
+    if active:
+        files["checkpoints/clip_0001.json"] = json.dumps(document).encode()
+    for relative, body in files.items():
+        path = run_root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(body)
+
+
+class SceneTakeTests(unittest.TestCase):
+
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.root = Path(self.temporary.name)
+        self.output_patch = patch.object(artifacts, "_OUTPUT_ROOT", self.root)
+        self.output_patch.start()
+        self.run_root = self.root / "h3_chains" / RUN
+        _write_take(self.run_root, REV_A, active=False)
+        _write_take(self.run_root, REV_B, active=True)
+        self.hq = self.run_root / "checkpoints_hq" / "clip_0001.safetensors"
+        self.hq.parent.mkdir(parents=True, exist_ok=True)
+
+    def tearDown(self):
+        self.output_patch.stop()
+        self.temporary.cleanup()
+
+    def _activate_pointer(self, body):
+        # Stand-in for the Context Loop pack: repoint clip_NNNN.json.
+        selection = body["revisions"][-1]
+        source = self.run_root / "checkpoints" / f"clip_{selection['scene']:04d}.{selection['revision']}.json"
+        (self.run_root / "checkpoints" / f"clip_{selection['scene']:04d}.json").write_bytes(source.read_bytes())
+
+    def test_snapshot_keeps_a_copy_of_the_active_takes_hq_latent(self):
+        self.hq.write_bytes(b"hq-B")
+        result = artifacts._snapshot_take(self.run_root, 1)
+        self.assertEqual(result["revision"], REV_B)
+        self.assertEqual(result["hq"], "saved")
+        self.assertEqual(artifacts._hq_take_path(self.run_root, 1, REV_B).read_bytes(), b"hq-B")
+
+    def test_snapshot_without_hq_latent_reports_absent(self):
+        self.assertEqual(artifacts._snapshot_take(self.run_root, 1)["hq"], "absent")
+
+    def test_activating_an_older_take_repoints_and_restores_its_hq_latent(self):
+        artifacts._hq_take_path(self.run_root, 1, REV_A).write_bytes(b"hq-A")
+        self.hq.write_bytes(b"hq-B")
+        (self.run_root / "checkpoints_hq" / "clip_0001_chunk_0000.safetensors").write_bytes(b"chunk-B")
+        with patch.object(artifacts, "_comfy_activate", side_effect=self._activate_pointer) as comfy:
+            result = asyncio.run(artifacts._activate_take(RUN, 1, REV_A))
+        comfy.assert_called_once()
+        self.assertEqual(comfy.call_args.args[0]["revisions"], [{"scene": 1, "revision": REV_A}])
+        self.assertEqual(result, {"revision": REV_A, "hq": "restored"})
+        self.assertEqual(self.hq.read_bytes(), b"hq-A")
+        self.assertFalse((self.run_root / "checkpoints_hq" / "clip_0001_chunk_0000.safetensors").exists())
+        self.assertEqual(artifacts._local_segment(self.run_root, 1)["revision"], REV_A)
+
+    def test_older_take_without_its_hq_latent_drops_the_wrong_one(self):
+        self.hq.write_bytes(b"hq-B")
+        with patch.object(artifacts, "_comfy_activate", side_effect=self._activate_pointer):
+            result = asyncio.run(artifacts._activate_take(RUN, 1, REV_A))
+        self.assertEqual(result["hq"], "absent")
+        self.assertFalse(self.hq.exists())
+
+    def test_activating_the_active_take_does_not_call_comfy(self):
+        self.hq.write_bytes(b"hq-B")
+        with patch.object(artifacts, "_comfy_activate") as comfy:
+            result = asyncio.run(artifacts._activate_take(RUN, 1, REV_B))
+        comfy.assert_not_called()
+        self.assertEqual(result, {"revision": REV_B, "hq": "local"})
+        self.assertEqual(self.hq.read_bytes(), b"hq-B")
+
+    def test_activation_refuses_a_take_with_damaged_files(self):
+        (self.run_root / f"checkpoints/clip_0001.{REV_A}.safetensors").write_bytes(b"tampered")
+        with patch.object(artifacts, "_comfy_activate") as comfy:
+            with self.assertRaises(ValueError):
+                asyncio.run(artifacts._activate_take(RUN, 1, REV_A))
+        comfy.assert_not_called()
+        self.assertEqual(artifacts._local_segment(self.run_root, 1)["revision"], REV_B)
+
+    def test_activation_refuses_an_unknown_take(self):
+        with self.assertRaises(FileNotFoundError):
+            asyncio.run(artifacts._activate_take(RUN, 1, "cccccccc3333"))
+
+    def test_failed_comfy_activation_changes_nothing(self):
+        artifacts._hq_take_path(self.run_root, 1, REV_A).write_bytes(b"hq-A")
+        self.hq.write_bytes(b"hq-B")
+        with patch.object(artifacts, "_comfy_activate", side_effect=ValueError("lineage")):
+            with self.assertRaises(ValueError):
+                asyncio.run(artifacts._activate_take(RUN, 1, REV_A))
+        self.assertEqual(self.hq.read_bytes(), b"hq-B")
+
+
 if __name__ == "__main__":
     unittest.main()
