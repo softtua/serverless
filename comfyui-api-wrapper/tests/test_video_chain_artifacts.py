@@ -364,6 +364,15 @@ class SceneTakeTests(unittest.TestCase):
         comfy.assert_not_called()
         self.assertEqual(artifacts._local_segment(self.run_root, 1)["revision"], REV_B)
 
+    def test_required_hq_refuses_before_repointing(self):
+        self.hq.write_bytes(b"hq-B")
+        with patch.object(artifacts, "_comfy_activate") as comfy:
+            with self.assertRaises(FileNotFoundError):
+                asyncio.run(artifacts._activate_take(RUN, 1, REV_A, require_hq=True))
+        comfy.assert_not_called()
+        self.assertEqual(self.hq.read_bytes(), b"hq-B")
+        self.assertEqual(artifacts._local_segment(self.run_root, 1)["revision"], REV_B)
+
     def test_activation_refuses_an_unknown_take(self):
         with self.assertRaises(FileNotFoundError):
             asyncio.run(artifacts._activate_take(RUN, 1, "cccccccc3333"))

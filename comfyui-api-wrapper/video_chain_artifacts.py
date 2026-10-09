@@ -585,6 +585,9 @@ class TakeRequest(BaseModel):
     scene: int = Field(gt=0)
     issued_at: int
     revision: str = ""
+    # 2K chains: refuse a take whose own HQ latent was not kept, before the
+    # active revision changes.
+    require_hq: bool = False
 
 
 def _hq_take_path(run_root: Path, scene: int, revision: str) -> Path:
@@ -643,9 +646,13 @@ async def _comfy_activate(body: dict[str, Any]) -> None:
                 raise ValueError(str(result.get("error") or f"Checkpoint activation failed ({response.status})."))
 
 
-async def _activate_take(run_name: str, scene: int, revision: str) -> dict[str, Any]:
+async def _activate_take(run_name: str, scene: int, revision: str, require_hq: bool = False) -> dict[str, Any]:
     run_root = _run_root(run_name)
     metadata = _revision_metadata(run_root, scene, revision)
+    current_revision = str((_local_segment(run_root, scene) or {}).get("revision") or "").lower()
+    if require_hq and not _hq_take_path(run_root, scene, revision).is_file() and not (
+            current_revision == revision and _hq_latent_path(run_root, scene).is_file()):
+        raise FileNotFoundError(f"Scene {scene} take {revision[:8]} has no HQ latent of its own.")
     # The take's own files (checkpoint included) must be complete before it
     # becomes the predecessor.
     segment = metadata["segment"]
@@ -721,6 +728,6 @@ async def activate_take(
     if not _REVISION_RE.fullmatch(revision):
         raise HTTPException(status_code=422, detail="Invalid take revision.")
     try:
-        return await _activate_take(payload.run_name, payload.scene, revision)
+        return await _activate_take(payload.run_name, payload.scene, revision, payload.require_hq)
     except (FileNotFoundError, ValueError, json.JSONDecodeError, OSError) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
