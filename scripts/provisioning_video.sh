@@ -307,19 +307,23 @@ set_cleanup_job() {
     if [[ ! -f /opt/proxima-build/bin/clean-output.sh ]]; then
         cat > /opt/proxima-build/bin/clean-output.sh << 'CLEAN_OUTPUT'
 #!/bin/bash
+# When free space is low, delete output files older than (oldest + 24 h).
+# Storyboard chain working sets (h3_chains) and the H3 reference cache are never
+# touched here: they are released by the wrapper when a chain is finished, and
+# pruning them by age silently breaks an unfinished film. Threshold raised from
+# 512 MB to 15 GB so a 2K scene (~2-4 GB of checkpoints) never hits a full disk.
 output_dir="/opt/ComfyUI/output/"
-min_free_mb=512
+min_free_mb=${CLEAN_OUTPUT_MIN_FREE_MB:-15360}
 available_space=$(df -m "${output_dir}" | awk 'NR==2 {print $4}')
 if [[ "$available_space" -lt "$min_free_mb" ]]; then
-    oldest=$(find "${output_dir}" -mindepth 1 -type f -printf "%T@\n" 2>/dev/null | sort -n | head -1 | awk '{printf "%.0f", $1}')
+    keep=( -not -path "${output_dir}h3_chains/*" -not -path "${output_dir}h3_reference_cache/*" )
+    oldest=$(find "${output_dir}" -mindepth 1 -type f "${keep[@]}" -printf "%T@\n" 2>/dev/null | sort -n | head -1 | awk '{printf "%.0f", $1}')
     if [[ -n "$oldest" ]]; then
+        echo "[$(date '+%F %T')] free ${available_space} MB < ${min_free_mb} MB, pruning outputs older than $(date -d @$((oldest+86400)) '+%F %T')"
         cutoff=$(awk "BEGIN {printf \"%.0f\", ${oldest}+86400}")
-        # Only delete files
-        find "${output_dir}" -mindepth 1 -type f ! -newermt "@${cutoff}" -delete
-        # Delete broken symlinks
-        find "${output_dir}" -mindepth 1 -xtype l -delete
-        # Now delete *empty* directories separately
-        find "${output_dir}" -mindepth 1 -type d -empty -delete
+        find "${output_dir}" -mindepth 1 -type f "${keep[@]}" ! -newermt "@${cutoff}" -delete
+        find "${output_dir}" -mindepth 1 -xtype l "${keep[@]}" -delete
+        find "${output_dir}" -mindepth 1 -type d -empty "${keep[@]}" -not -path "${output_dir}h3_chains" -not -path "${output_dir}h3_reference_cache" -delete
     fi
 fi
 CLEAN_OUTPUT
